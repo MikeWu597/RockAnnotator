@@ -349,6 +349,18 @@ app.get('/api/admin/tasks/:id', isAuthenticated, async (req, res) => {
   }
 });
 
+// 获取单个任务的 annotations（独立接口，便于前端单独请求）
+app.get('/api/admin/tasks/:id/annotations', isAuthenticated, async (req, res) => {
+  try {
+    const taskId = parseInt(req.params.id);
+    const annotations = await dbManager.getAnnotationsByTaskId(taskId);
+    res.json({ success: true, data: annotations });
+  } catch (error) {
+    console.error('Error fetching annotations for task:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // 删除标注任务的API
 app.delete('/api/admin/tasks/:id', isAuthenticated, async (req, res) => {
   try {

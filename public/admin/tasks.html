@@ -177,7 +177,7 @@
             </div>
         </div>
     </div>
-
+    
     <!-- 重置确认模态框 -->
     <div class="modal fade" id="resetConfirmModal" tabindex="-1" aria-labelledby="resetConfirmModalLabel" aria-hidden="true">
         <div class="modal-dialog">
@@ -477,9 +477,15 @@
                                             </table>
                                         </div>
                                         <div class="col-12">
-                                            <div id="annotationPreview" class="border p-2" style="max-height:420px; overflow:auto; text-align:center;">
-                                                <canvas id="annotationPreviewCanvas" style="max-width:100%; height:auto; border:1px solid #eee;"></canvas>
-                                                <div id="annotationPreviewMessage" class="text-muted mt-2">加载中...</div>
+                                            <div id="annotationPreview" class="border rounded p-2" style="max-height:420px; overflow:auto;">
+                                                <div class="d-flex justify-content-center">
+                                                    <div class="position-relative w-100" style="text-align:center;">
+                                                        <!-- 用隐藏的 canvas 绘制，导出为图片再显示 -->
+                                                        <canvas id="annotationPreviewCanvas" class="d-none" style="max-width:100%; height:auto; border:1px solid #eee;"></canvas>
+                                                        <img id="annotationPreviewImage" class="img-fluid d-none" alt="标注预览" style="border:1px solid #eee;" />
+                                                        <div id="annotationPreviewMessage" class="text-muted small py-3">加载中...</div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -513,12 +519,27 @@
                             });
                         }
 
-                        // 渲染标注预览（如果有的话）
-                        try {
-                            renderAnnotationPreview(task, task.annotations);
-                        } catch (e) {
-                            console.warn('Failed to render annotation preview:', e);
-                        }
+                        // 渲染标注预览（如果有的话）。如果响应中没有 annotations 字段，单独请求 annotations 接口。
+                        (async function() {
+                            try {
+                                let annotations = data.data.annotations;
+                                if (!annotations || !Array.isArray(annotations) || annotations.length === 0) {
+                                    try {
+                                        const resp = await fetch(`/api/admin/tasks/${taskId}/annotations`);
+                                        const annsJson = await resp.json();
+                                        if (annsJson && annsJson.success && Array.isArray(annsJson.data)) {
+                                            annotations = annsJson.data;
+                                        }
+                                    } catch (annErr) {
+                                        console.warn('Failed to fetch annotations separately:', annErr);
+                                    }
+                                }
+
+                                renderAnnotationPreview(task, annotations);
+                            } catch (e) {
+                                console.warn('Failed to render annotation preview:', e);
+                            }
+                        })();
                     } else {
                         modalBody.innerHTML = `
                             <div class="alert alert-danger" role="alert">
@@ -611,34 +632,76 @@
         function renderAnnotationPreview(task, annotations) {
             const canvas = document.getElementById('annotationPreviewCanvas');
             const message = document.getElementById('annotationPreviewMessage');
-            message.textContent = '加载中...';
+            const previewImg = document.getElementById('annotationPreviewImage');
             const ctx = canvas.getContext('2d');
+            // 初始状态：提示可见，画布和图片隐藏
+            message.classList.remove('d-none');
+            message.textContent = '加载中...';
+            canvas.classList.add('d-none');
+            previewImg.classList.add('d-none');
 
-            // 如果没有 annotations
-            if (!annotations || annotations.length === 0) {
-                canvas.style.display = 'none';
+            // 支持 annotations 为对象或数组，或为包含 content 字段的记录数组
+            const annArray = Array.isArray(annotations) ? annotations : (annotations ? [annotations] : []);
+
+            if (!annArray || annArray.length === 0) {
+                canvas.classList.add('d-none');
+                previewImg.classList.add('d-none');
+                message.classList.remove('d-none');
                 message.textContent = '该任务暂无标注内容';
                 return;
             }
 
-            // 取最近一次的 annotations
-            const last = annotations[annotations.length - 1];
-            const polygons = last.polygons || [];
+            // 解析每一条记录，支持直接对象或{ content: '...json...' } 形式；若是双重字符串也再解析一次
+            const normalized = annArray.map(a => {
+                if (!a) return null;
+                if (a.polygons) return a;
+                if (a.content) {
+                    try {
+                        let parsed = (typeof a.content === 'string') ? JSON.parse(a.content) : a.content;
+                        if (typeof parsed === 'string') {
+                            parsed = JSON.parse(parsed);
+                        }
+                        return parsed;
+                    } catch (e) {
+                        return null;
+                    }
+                }
+                return a;
+            }).filter(Boolean);
+
+            const last = normalized.length > 0 ? normalized[normalized.length - 1] : null;
+            const polygons = last && Array.isArray(last.polygons) ? last.polygons : [];
+
+            if (!polygons || polygons.length === 0) {
+                canvas.classList.add('d-none');
+                previewImg.classList.add('d-none');
+                message.classList.remove('d-none');
+                message.textContent = '该任务暂无标注多边形';
+                return;
+            }
 
             const img = new Image();
             img.crossOrigin = 'anonymous';
             img.onload = function() {
                 message.textContent = '';
-                canvas.style.display = 'inline-block';
+                message.classList.add('d-none');
 
                 // 计算最大可用尺寸
                 const container = document.getElementById('annotationPreview');
-                const maxW = Math.min(container.clientWidth - 20, 800);
+                const containerWidth = container && container.clientWidth ? container.clientWidth : img.width;
+                const maxW = Math.min(Math.max(containerWidth - 20, 10), 800);
                 const maxH = 420;
-                const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+                const scale = Math.min(maxW / img.width, maxH / img.height, 1) || 1;
 
+                // 设置canvas的实际绘图尺寸
                 canvas.width = Math.round(img.width * scale);
                 canvas.height = Math.round(img.height * scale);
+
+                // 修复：确保canvas在容器内居中显示并保持比例
+                canvas.style.width = canvas.width + 'px';
+                canvas.style.height = canvas.height + 'px';
+                canvas.style.display = 'block';
+                canvas.style.margin = '0 auto';
 
                 // 清理并绘制
                 ctx.clearRect(0,0,canvas.width, canvas.height);
@@ -659,7 +722,9 @@
                     ctx.strokeStyle = 'red';
                     ctx.lineWidth = 2;
                     ctx.stroke();
-                    ctx.fillStyle = 'rgba(255,0,0,0.12)';
+                    // 轻微填充以突出多边形区域，同时保持红色描边为主
+                    // 半透明填充让区域更明显
+                    ctx.fillStyle = 'rgba(255,0,0,0.35)';
                     ctx.fill();
 
                     // 标签
@@ -683,9 +748,10 @@
 
                         let left = cx + 6;
                         let top = cy - 6 - rectH;
-                        if (left + rectW + 4 > canvas.width) left = canvas.width - rectW - 4;
+                        if (left + rectW > canvas.width) left = canvas.width - rectW - 4;
                         if (left < 4) left = 4;
-                        if (top < 4) top = cy + 6;
+                        if (top + rectH > canvas.height) top = canvas.height - rectH - 4;
+                        if (top < 4) top = 4;
 
                         const bg = getTagColor(text);
                         ctx.fillStyle = bg;
@@ -700,10 +766,18 @@
                         ctx.restore();
                     }
                 });
+
+                // 将绘制结果导出为图片，展示 img，保持 canvas 隐藏
+                const dataUrl = canvas.toDataURL('image/png');
+                previewImg.src = dataUrl;
+                previewImg.classList.remove('d-none');
+                canvas.classList.add('d-none');
             };
 
             img.onerror = function() {
-                canvas.style.display = 'none';
+                canvas.classList.add('d-none');
+                previewImg.classList.add('d-none');
+                message.classList.remove('d-none');
                 message.textContent = '无法加载图片预览';
             };
 
