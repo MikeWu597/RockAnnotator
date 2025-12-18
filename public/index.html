@@ -162,90 +162,183 @@
         
         // 页面加载完成后初始化
         window.addEventListener('load', function() {
-            loadRandomTask();
-            setupEventListeners();
+            console.log('Page loaded, initializing application');
+            try {
+                loadRandomTask();
+                setupEventListeners();
+            } catch (e) {
+                showError('初始化应用程序时发生错误: ' + e.message);
+            }
         });
         
         // 加载随机标注任务
         function loadRandomTask() {
-            fetch('/api/tasks/random')
-                .then(response => response.json())
-                .then(data => {
-                    console.log('Received task data:', data);
-                    if (data.success) {
-                        currentTaskId = data.data.task.id;
-                        document.getElementById('taskId').textContent = currentTaskId;
-                        loadImage(data.data.imagePath);
-                        // 不再在这里隐藏加载界面，在图片加载成功后再隐藏
-                    } else {
-                        document.getElementById('loading').innerHTML = `
-                            <div class="text-center">
-                                <i class="fas fa-exclamation-triangle text-warning" style="font-size: 3rem;"></i>
-                                <p class="mt-3">暂无待标注任务</p>
-                                <a href="/admin/login" class="btn btn-primary mt-2">前往管理面板</a>
+            console.log('Loading random task');
+            try {
+                fetch('/api/tasks/random')
+                    .then(response => {
+                        console.log('Received response from server');
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Received task data:', data);
+                        if (data.success) {
+                            currentTaskId = data.data.task.id;
+                            document.getElementById('taskId').textContent = currentTaskId;
+                            console.log('Loading image:', data.data.imagePath);
+                            loadImage(data.data.imagePath);
+                        } else {
+                            console.log('No pending tasks available');
+                            hideLoadingShowMessage(`
+                                <div class="text-center">
+                                    <i class="fas fa-exclamation-triangle text-warning" style="font-size: 3rem;"></i>
+                                    <p class="mt-3">暂无待标注任务</p>
+                                    <a href="/admin/login" class="btn btn-primary mt-2">前往管理面板</a>
+                                </div>
+                            `);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error loading task:', error);
+                        hideLoadingShowMessage(`
+                            <div class="text-center text-danger">
+                                <i class="fas fa-exclamation-triangle" style="font-size: 3rem;"></i>
+                                <p class="mt-3">加载任务失败: ${error.message}</p>
+                                <button class="btn btn-primary mt-2" onclick="loadRandomTask()">重试</button>
                             </div>
-                        `;
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    document.getElementById('loading').innerHTML = `
-                        <div class="text-center text-danger">
-                            <i class="fas fa-exclamation-triangle" style="font-size: 3rem;"></i>
-                            <p class="mt-3">加载任务失败: ${error.message}</p>
-                            <button class="btn btn-primary mt-2" onclick="loadRandomTask()">重试</button>
-                        </div>
-                    `;
-                });
+                        `);
+                    });
+            } catch (e) {
+                showError('加载任务时发生错误: ' + e.message);
+            }
+        }
+        
+        // 隐藏加载界面并显示消息
+        function hideLoadingShowMessage(message) {
+            const loadingElement = document.getElementById('loading');
+            if (loadingElement) {
+                loadingElement.innerHTML = message;
+                loadingElement.style.display = 'block';
+            }
+            const mainContentElement = document.getElementById('main-content');
+            if (mainContentElement) {
+                mainContentElement.style.display = 'none';
+            }
+        }
+        
+        // 显示错误消息
+        function showError(message) {
+            console.error('Application error:', message);
+            hideLoadingShowMessage(`
+                <div class="text-center text-danger">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 3rem;"></i>
+                    <p class="mt-3">${message}</p>
+                    <button class="btn btn-primary mt-2" onclick="location.reload()">重新加载</button>
+                </div>
+            `);
         }
         
         // 加载图片
         function loadImage(imagePath) {
-            console.log('Loading image with path:', imagePath);
-            
-            // 创建新的图片对象
-            const img = new Image();
-            
-            // 设置跨域属性（如果需要）
-            img.crossOrigin = "anonymous";
-            
-            img.onload = function() {
-                console.log('Image loaded successfully:', img.width, 'x', img.height);
-                currentImage = img;
-                resizeCanvas();
-                drawImage();
-                updateZoomLevel();
+            try {
+                console.log('Loading image with path:', imagePath);
                 
-                // 隐藏加载界面并显示主内容
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('main-content').style.display = 'block';
-            };
-            
-            img.onerror = function(event) {
-                console.error('图片加载失败:', imagePath, event);
-                document.getElementById('loading').innerHTML = `
-                    <div class="text-center text-danger">
-                        <i class="fas fa-exclamation-triangle" style="font-size: 3rem;"></i>
-                        <p class="mt-3">图片加载失败: ${imagePath}</p>
-                        <button class="btn btn-primary mt-2" onclick="loadRandomTask()">重试</button>
-                    </div>
-                `;
-            };
-            
-            // 正确处理图片路径
-            // 如果是绝对路径，我们直接使用；如果是相对路径，我们需要适配
-            if (imagePath.startsWith('/')) {
-                // 对于以 / 开头的路径，我们在前面加上 . 来表示相对于当前域的根目录
-                img.src = '.' + imagePath;
-            } else if (imagePath.startsWith('http')) {
-                // 对于完整的URL，直接使用
-                img.src = imagePath;
-            } else {
-                // 对于相对路径，直接使用
-                img.src = imagePath;
+                // 先显示加载中界面
+                const loadingElement = document.getElementById('loading');
+                const mainContentElement = document.getElementById('main-content');
+                
+                if (loadingElement) {
+                    loadingElement.style.display = 'flex';
+                    loadingElement.innerHTML = `
+                        <div>
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                            <p class="mt-2">正在加载图片...</p>
+                        </div>
+                    `;
+                }
+                
+                if (mainContentElement) {
+                    mainContentElement.style.display = 'none';
+                }
+                
+                // 创建新的图片对象
+                const img = new Image();
+                
+                // 设置跨域属性（如果需要）
+                img.crossOrigin = "anonymous";
+                
+                img.onload = function() {
+                    try {
+                        console.log('Image loaded successfully:', img.width, 'x', img.height);
+                        currentImage = img;
+
+                        // 确保画布大小并绘制（优先重设画布以防尺寸为0）
+                        resizeCanvas();
+                        drawImage();
+                        updateZoomLevel();
+
+                        // 稳健地隐藏加载遮罩（使用 !important 覆盖任何 CSS），并清空其内容以避免再次被设置为可见
+                        if (loadingElement) {
+                            loadingElement.style.setProperty('display', 'none', 'important');
+                            loadingElement.style.setProperty('visibility', 'hidden', 'important');
+                            loadingElement.style.setProperty('pointer-events', 'none', 'important');
+                            loadingElement.innerHTML = '';
+                        }
+
+                        // 确保主内容可见
+                        if (mainContentElement) {
+                            mainContentElement.style.setProperty('display', 'block', 'important');
+                            mainContentElement.style.setProperty('visibility', 'visible', 'important');
+                        }
+
+                        // 如果在某些浏览器/布局下仍未显示，强制重绘，并滚动到画布中心
+                        setTimeout(() => {
+                            resizeCanvas();
+                            drawImage();
+                            // 将焦点聚到 canvas，防止被其他元素遮挡
+                            canvas.scrollIntoView({behavior: 'auto', block: 'center'});
+                        }, 50);
+                    } catch (e) {
+                        showError('绘制图片时发生错误: ' + e.message);
+                    }
+                };
+                
+                img.onerror = function(event) {
+                    console.error('图片加载失败:', imagePath, event);
+                    hideLoadingShowMessage(`
+                        <div class="text-center text-danger">
+                            <i class="fas fa-exclamation-triangle" style="font-size: 3rem;"></i>
+                            <p class="mt-3">图片加载失败: ${imagePath}</p>
+                            <button class="btn btn-primary mt-2" onclick="loadRandomTask()">重试</button>
+                        </div>
+                    `);
+                };
+                
+                // 正确处理图片路径并进行 URL 编码，避免空格/特殊字符导致的问题
+                let resolvedSrc;
+                if (imagePath.startsWith('/')) {
+                    // 以 / 开头的路径，前面加上 . 表示相对于当前域的根目录
+                    resolvedSrc = '.' + encodeURI(imagePath);
+                } else if (imagePath.startsWith('http')) {
+                    // 完整 URL 直接使用
+                    resolvedSrc = imagePath;
+                } else {
+                    // 相对路径进行编码
+                    resolvedSrc = encodeURI(imagePath);
+                }
+                img.src = resolvedSrc;
+                console.log('Final image src:', img.src, 'img.complete:', img.complete);
+                // 调试：如果若干秒后还未加载，输出警告便于定位
+                setTimeout(() => {
+                    if (!img.complete) {
+                        console.warn('Image not loaded after 5s. src=', img.src);
+                    }
+                }, 5000);
+            } catch (e) {
+                showError('加载图片时发生错误: ' + e.message);
             }
-            
-            console.log('Final image src:', img.src);
         }
         
         // 调整画布大小
@@ -536,45 +629,119 @@
         
         // 保存标注并加载新任务
         function saveAndLoadNew() {
-            if (!currentTaskId) return;
+            if (!currentTaskId) {
+                console.warn('No current task ID available');
+                return;
+            }
+            
+            console.log('Saving annotation for task:', currentTaskId);
+            
+            // 验证多边形数据
+            if (polygons.length === 0) {
+                console.warn('No polygons to save');
+                // 即使没有多边形也允许保存空标注
+            }
             
             // 准备注释数据
-            const annotationData = {
-                taskId: currentTaskId,
-                polygons: polygons.map(polygon => 
-                    polygon.map(point => {
-                        const imgCoords = canvasToImageCoords(point.x, point.y);
-                        return {
-                            x: imgCoords.x,
-                            y: imgCoords.y
-                        };
-                    })
-                )
-            };
+            let annotationData;
+            try {
+                annotationData = {
+                    taskId: currentTaskId,
+                    polygons: polygons.map(polygon => 
+                        polygon.map(point => {
+                            const imgCoords = canvasToImageCoords(point.x, point.y);
+                            return {
+                                x: Math.round(imgCoords.x * 100) / 100, // 保留两位小数
+                                y: Math.round(imgCoords.y * 100) / 100
+                            };
+                        })
+                    )
+                };
+                
+                console.log('Prepared annotation data:', annotationData);
+            } catch (error) {
+                console.error('Error preparing annotation data:', error);
+                alert('准备标注数据时出错: ' + error.message);
+                return;
+            }
             
-            // 发送到服务器保存
-            fetch('/api/annotations/save', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(annotationData)
+            // 显示保存中状态
+            hideLoadingShowMessage(`
+                <div class="d-flex justify-content-center align-items-center" style="height: 100vh;">
+                    <div>
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">保存中...</span>
+                        </div>
+                        <p class="mt-2">正在保存标注数据...</p>
+                    </div>
+                </div>
+            `);
+            
+            // 添加超时处理
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('保存请求超时')), 10000);
+            });
+            
+            Promise.race([
+                fetch('/api/annotations/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify(annotationData)
+                }),
+                timeoutPromise
+            ])
+            .then(response => {
+                console.log('Save response status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                return response.json();
             })
-            .then(response => response.json())
             .then(data => {
+                console.log('Save response data:', data);
+                
                 if (data.success) {
+                    console.log('Annotation saved successfully');
                     // 重置状态并加载新任务
                     polygons = [];
                     currentPolygon = [];
                     updatePolygonCount();
                     loadRandomTask();
                 } else {
-                    alert('保存失败: ' + data.error);
+                    console.error('Save failed:', data.error);
+                    hideLoadingShowMessage(`
+                        <div class="text-center text-danger">
+                            <i class="fas fa-save" style="font-size: 3rem;"></i>
+                            <p class="mt-3">保存失败: ${data.error || '未知错误'}</p>
+                            <button class="btn btn-secondary mt-2" onclick="history.back()">返回</button>
+                            <button class="btn btn-primary mt-2 ms-2" onclick="saveAndLoadNew()">重试保存</button>
+                        </div>
+                    `);
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
-                alert('保存失败: ' + error.message);
+                console.error('Error saving annotation:', error);
+                
+                let errorMessage = error.message;
+                if (errorMessage.includes('Failed to fetch')) {
+                    errorMessage = '无法连接到服务器，请检查网络连接';
+                } else if (errorMessage.includes('timeout')) {
+                    errorMessage = '请求超时，请检查网络连接';
+                }
+                
+                hideLoadingShowMessage(`
+                    <div class="text-center text-danger">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 3rem;"></i>
+                        <p class="mt-3">保存失败: ${errorMessage}</p>
+                        <button class="btn btn-secondary mt-2" onclick="history.back()">返回</button>
+                        <button class="btn btn-primary mt-2 ms-2" onclick="saveAndLoadNew()">重试保存</button>
+                    </div>
+                `);
             });
         }
         
