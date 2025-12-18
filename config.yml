@@ -1,0 +1,11 @@
+# 服务器配置
+server:
+  port: 3000
+
+# 管理员配置
+admin:
+  password: "admin123"
+
+# 数据库配置
+database:
+  name: "rockannotator.db"

@@ -1,0 +1,44 @@
+/* 自定义管理面板样式 */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.navbar-brand {
+  font-weight: bold;
+}
+
+.card {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.login-container {
+  max-width: 400px;
+  margin-top: 100px;
+}
+
+.dashboard-header {
+  margin-bottom: 30px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.stats-card {
+  text-align: center;
+  padding: 20px;
+}
+
+.stats-number {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #007bff;
+}
+
+.action-buttons .btn {
+  margin-right: 10px;
+  margin-bottom: 10px;
+}
