@@ -378,11 +378,35 @@
             drawCurrentPolygon();
         }
         
+        // ----- 标签渲染辅助 -----
+        function getTagColor(tag) {
+            // 简单哈希到 H 值，保证不同 tag 颜色可区分
+            let hash = 0;
+            for (let i = 0; i < tag.length; i++) {
+                hash = ((hash << 5) - hash) + tag.charCodeAt(i);
+                hash |= 0;
+            }
+            const h = Math.abs(hash) % 360;
+            return `hsl(${h}, 70%, 45%)`;
+        }
+
+        function drawRoundedRect(ctx, x, y, w, h, r) {
+            r = Math.min(r, w/2, h/2);
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            ctx.closePath();
+            ctx.fill();
+        }
+
         // 绘制已完成的多边形（polygons 存储为 {points:[], tag: ''}）
         function drawPolygons() {
-            ctx.strokeStyle = 'red';
             ctx.lineWidth = 2;
-            ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.15)';
+            ctx.strokeStyle = 'red';
 
             polygons.forEach(polygon => {
                 if (!polygon.points || polygon.points.length < 3) return;
@@ -400,16 +424,50 @@
                 ctx.stroke();
                 ctx.fill();
 
-                // 在多边形中心显示标签（可选）
+                // 在多边形中心显示标签（带醒目背景色）
                 if (polygon.tag) {
                     // 计算质心（图片坐标）并转换为画布坐标
                     const centroid = polygon.points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), {x:0,y:0});
                     centroid.x /= polygon.points.length;
                     centroid.y /= polygon.points.length;
                     const cCanvas = imageToCanvasCoords(centroid.x, centroid.y);
-                    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                    ctx.font = '12px sans-serif';
-                    ctx.fillText(polygon.tag, cCanvas.x + 6, cCanvas.y - 6);
+
+                    // 文本与背景样式
+                    ctx.save();
+                    ctx.font = 'bold 12px sans-serif';
+                    ctx.textBaseline = 'middle';
+                    ctx.textAlign = 'left';
+                    const padding = 6;
+                    const text = polygon.tag;
+                    const metrics = ctx.measureText(text);
+                    const textW = metrics.width;
+                    const rectW = textW + padding * 2;
+                    const rectH = 18;
+
+                    // 初始位置：位于质心右上方
+                    let left = cCanvas.x + 6;
+                    let top = cCanvas.y - 6 - rectH;
+
+                    // 保证不超出画布边界
+                    if (left + rectW + 4 > canvas.width) left = canvas.width - rectW - 4;
+                    if (left < 4) left = 4;
+                    if (top < 4) top = cCanvas.y + 6; // 如果顶部超出，则放到质心下方
+
+                    // 背景色
+                    const bg = getTagColor(text);
+                    ctx.fillStyle = bg;
+                    ctx.shadowColor = 'rgba(0,0,0,0.25)';
+                    ctx.shadowBlur = 4;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 2;
+
+                    // 绘制圆角背景
+                    drawRoundedRect(ctx, left, top, rectW, rectH, 6);
+
+                    // 绘制文本
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(text, left + padding, top + rectH / 2);
+                    ctx.restore();
                 }
             });
         }

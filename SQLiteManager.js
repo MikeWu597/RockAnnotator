@@ -426,6 +426,38 @@ class SQLiteManager {
         });
     }
 
+    // 将任务重置为待标注状态
+    resetTaskToPending(taskId) {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                UPDATE annotation_tasks
+                SET status = 'pending', completed_at = NULL
+                WHERE id = ?
+            `;
+
+            this.db.run(sql, [taskId], function(err) {
+                if (err) return reject(err);
+                resolve(this.changes);
+            });
+        });
+    }
+
+    // 删除与某任务相关的 annotations（以 content 字段中包含 taskId 为匹配依据）
+    deleteAnnotationsByTaskId(taskId) {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                DELETE FROM annotations
+                WHERE instr(content, '"taskId":' || ?) > 0
+                   OR instr(content, '"taskId": ' || ?) > 0
+            `;
+
+            this.db.run(sql, [String(taskId), String(taskId)], function(err) {
+                if (err) return reject(err);
+                resolve(this.changes);
+            });
+        });
+    }
+
     /**
      * 删除标注任务
      */

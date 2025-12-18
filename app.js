@@ -376,6 +376,24 @@ app.delete('/api/admin/tasks/:id', isAuthenticated, async (req, res) => {
   }
 });
 
+// 管理员：重置任务（删除标注信息并重置为 pending）
+app.post('/api/admin/tasks/:id/reset', isAuthenticated, async (req, res) => {
+  try {
+    const taskId = parseInt(req.params.id);
+
+    // 删除与该任务相关的 annotations
+    await dbManager.deleteAnnotationsByTaskId(taskId);
+
+    // 将任务状态设置为 pending
+    await dbManager.resetTaskToPending(taskId);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error resetting task:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // 获取随机待标注任务的API
 app.get('/api/tasks/random', async (req, res) => {
   try {
