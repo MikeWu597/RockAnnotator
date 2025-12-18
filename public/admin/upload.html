@@ -29,7 +29,7 @@
                         <a class="nav-link active" href="/admin/upload">图片上传</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#">标注任务</a>
+                        <a class="nav-link" href="/admin/tasks">标注任务</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="#">数据导出</a>
@@ -114,7 +114,7 @@
                         <ul>
                             <li>上传的图片将保存在服务器的 <code>uploads</code> 目录中</li>
                             <li>图片信息（文件名、尺寸等）将记录在数据库中</li>
-                            <li>上传成功后可以在标注任务中使用这些图片</li>
+                            <li>上传成功后会自动创建标注任务</li>
                             <li>请确保图片内容符合标注任务的要求</li>
                         </ul>
                     </div>
@@ -164,7 +164,7 @@
                     resultBody.innerHTML = `
                         <div class="alert alert-success" role="alert">
                             <h4 class="alert-heading">图片 "${data.data.filename}" 上传成功!</h4>
-                            <p>图片信息已保存到数据库。</p>
+                            <p>图片信息已保存到数据库，并已创建标注任务。</p>
                             <hr>
                             <p class="mb-0">
                                 尺寸: ${data.data.width} x ${data.data.height} 像素<br>
@@ -172,6 +172,9 @@
                             </p>
                         </div>
                         <div class="mt-3">
+                            <a href="/admin/tasks" class="btn btn-success">
+                                <i class="fas fa-tasks me-1"></i>查看标注任务
+                            </a>
                             <button id="continueUpload" class="btn btn-primary">
                                 <i class="fas fa-plus me-1"></i>继续上传
                             </button>

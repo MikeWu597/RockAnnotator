@@ -61,6 +61,15 @@ class SQLiteManager {
                     height INTEGER NOT NULL,
                     upload_time DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
+                
+                CREATE TABLE IF NOT EXISTS annotation_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    image_id INTEGER NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    completed_at DATETIME NULL,
+                    FOREIGN KEY (image_id) REFERENCES images (id)
+                );
             `;
 
             this.db.exec(createTableSQL, (err) => {
@@ -177,6 +186,138 @@ class SQLiteManager {
     getImageById(id) {
         return new Promise((resolve, reject) => {
             const sql = 'SELECT * FROM images WHERE id = ?';
+            this.db.get(sql, [id], (err, row) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(row);
+                }
+            });
+        });
+    }
+
+    /**
+     * 创建标注任务
+     */
+    createAnnotationTask(imageId) {
+        return new Promise((resolve, reject) => {
+            const sql = 'INSERT INTO annotation_tasks (image_id) VALUES (?)';
+            this.db.run(sql, [imageId], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.lastID);
+                }
+            });
+        });
+    }
+
+    /**
+     * 获取标注任务列表（带分页）
+     */
+    getAnnotationTasks(page = 1, pageSize = 10, status = null) {
+        return new Promise((resolve, reject) => {
+            const offset = (page - 1) * pageSize;
+            
+            let sql = `
+                SELECT 
+                    at.id,
+                    at.status,
+                    at.created_at,
+                    at.completed_at,
+                    i.filename,
+                    i.width,
+                    i.height
+                FROM annotation_tasks at
+                JOIN images i ON at.image_id = i.id
+            `;
+            
+            const params = [];
+            
+            if (status) {
+                sql += ' WHERE at.status = ?';
+                params.push(status);
+            }
+            
+            sql += ' ORDER BY at.created_at DESC LIMIT ? OFFSET ?';
+            params.push(pageSize, offset);
+            
+            this.db.all(sql, params, (err, rows) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(rows);
+                }
+            });
+        });
+    }
+
+    /**
+     * 获取标注任务总数
+     */
+    getAnnotationTasksCount(status = null) {
+        return new Promise((resolve, reject) => {
+            let sql = 'SELECT COUNT(*) as count FROM annotation_tasks';
+            const params = [];
+            
+            if (status) {
+                sql += ' WHERE status = ?';
+                params.push(status);
+            }
+            
+            this.db.get(sql, params, (err, row) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(row.count);
+                }
+            });
+        });
+    }
+
+    /**
+     * 更新标注任务状态
+     */
+    updateAnnotationTaskStatus(taskId, status) {
+        return new Promise((resolve, reject) => {
+            let sql, params;
+            if (status === 'completed') {
+                sql = 'UPDATE annotation_tasks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?';
+                params = [status, taskId];
+            } else {
+                sql = 'UPDATE annotation_tasks SET status = ? WHERE id = ?';
+                params = [status, taskId];
+            }
+            
+            this.db.run(sql, params, function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.changes);
+                }
+            });
+        });
+    }
+
+    /**
+     * 根据ID获取标注任务
+     */
+    getAnnotationTaskById(id) {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                SELECT 
+                    at.id,
+                    at.status,
+                    at.created_at,
+                    at.completed_at,
+                    i.filename,
+                    i.width,
+                    i.height
+                FROM annotation_tasks at
+                JOIN images i ON at.image_id = i.id
+                WHERE at.id = ?
+            `;
+            
             this.db.get(sql, [id], (err, row) => {
                 if (err) {
                     reject(err);

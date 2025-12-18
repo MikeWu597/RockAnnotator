@@ -5,7 +5,8 @@ const SQLiteManager = require('./SQLiteManager');
 const session = require('express-session');
 const SQLiteStore = require('connect-sqlite3')(session);
 const multer = require('multer');
-const sizeOf = require('image-size');
+const { imageSize } = require('image-size');
+const fs = require('fs');
 
 // 加载配置文件
 const config = YAML.load(path.join(__dirname, 'config.yml'));
@@ -157,6 +158,11 @@ app.get('/admin/upload', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin', 'upload.html'));
 });
 
+// 标注任务页面
+app.get('/admin/tasks', isAuthenticated, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin', 'tasks.html'));
+});
+
 // 处理图片上传的API
 app.post('/api/admin/images/upload', isAuthenticated, upload.single('image'), async (req, res) => {
   try {
@@ -164,11 +170,15 @@ app.post('/api/admin/images/upload', isAuthenticated, upload.single('image'), as
       return res.status(400).json({ error: '请选择要上传的图片' });
     }
     
-    // 获取图片尺寸信息
-    const dimensions = sizeOf.sync(req.file.path);
+    // 读取文件并获取图片尺寸信息
+    const buffer = fs.readFileSync(req.file.path);
+    const dimensions = imageSize(buffer);
     
     // 保存图片信息到数据库
     const imageId = await dbManager.insertImage(req.file.filename, dimensions.width, dimensions.height);
+    
+    // 为上传的图片创建标注任务
+    await dbManager.createAnnotationTask(imageId);
     
     res.json({
       success: true,
@@ -197,6 +207,96 @@ app.get('/api/admin/images', isAuthenticated, async (req, res) => {
     res.json({
       success: true,
       data: images
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 获取标注任务列表的API（带分页）
+app.get('/api/admin/tasks', isAuthenticated, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.pageSize) || 10;
+    const status = req.query.status || null;
+    
+    const tasks = await dbManager.getAnnotationTasks(page, pageSize, status);
+    const total = await dbManager.getAnnotationTasksCount(status);
+    
+    res.json({
+      success: true,
+      data: {
+        tasks,
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize)
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 获取单个标注任务详情的API
+app.get('/api/admin/tasks/:id', isAuthenticated, async (req, res) => {
+  try {
+    const taskId = parseInt(req.params.id);
+    const task = await dbManager.getAnnotationTaskById(taskId);
+    
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: '任务未找到'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: task
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 更新标注任务状态的API
+app.put('/api/admin/tasks/:id/status', isAuthenticated, async (req, res) => {
+  try {
+    const taskId = parseInt(req.params.id);
+    const { status } = req.body;
+    
+    // 验证状态值
+    if (!['pending', 'completed'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: '无效的状态值'
+      });
+    }
+    
+    const result = await dbManager.updateAnnotationTaskStatus(taskId, status);
+    
+    if (result === 0) {
+      return res.status(404).json({
+        success: false,
+        error: '任务未找到'
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: '任务状态更新成功'
     });
   } catch (error) {
     res.status(500).json({
