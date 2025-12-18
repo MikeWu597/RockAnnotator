@@ -462,31 +462,26 @@
                                 </div>
                                 
                                 <div class="col-md-6">
-                                    <h6>图片信息</h6>
-                                    <table class="table table-borderless">
-                                        <tr>
-                                            <td><strong>文件名:</strong></td>
-                                            <td>${task.filename}</td>
-                                        </tr>
-                                        <tr>
-                                            <td><strong>尺寸:</strong></td>
-                                            <td>${task.width} x ${task.height} 像素</td>
-                                        </tr>
-                                    </table>
-                                </div>
-                            </div>
-                            
-                            <div class="row mt-4">
-                                <div class="col-12">
-                                    <div class="alert alert-info" role="alert">
-                                        <h6 class="alert-heading">
-                                            <i class="fas fa-info-circle me-2"></i>任务状态说明
-                                        </h6>
-                                        <p>任务状态由标注系统自动更新，无法在此处手动更改。</p>
-                                        <hr>
-                                        <p class="mb-0">
-                                            当前状态：<strong>${task.status === 'completed' ? '已标注' : '待标注'}</strong>
-                                        </p>
+                                    <h6>图片信息 & 标注预览</h6>
+                                    <div class="row">
+                                        <div class="col-12 mb-2">
+                                            <table class="table table-borderless">
+                                                <tr>
+                                                    <td><strong>文件名:</strong></td>
+                                                    <td>${task.filename}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td><strong>尺寸:</strong></td>
+                                                    <td>${task.width} x ${task.height} 像素</td>
+                                                </tr>
+                                            </table>
+                                        </div>
+                                        <div class="col-12">
+                                            <div id="annotationPreview" class="border p-2" style="max-height:420px; overflow:auto; text-align:center;">
+                                                <canvas id="annotationPreviewCanvas" style="max-width:100%; height:auto; border:1px solid #eee;"></canvas>
+                                                <div id="annotationPreviewMessage" class="text-muted mt-2">加载中...</div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -516,6 +511,13 @@
                             resetBtn.addEventListener('click', function() {
                                 showResetConfirm(taskId);
                             });
+                        }
+
+                        // 渲染标注预览（如果有的话）
+                        try {
+                            renderAnnotationPreview(task, task.annotations);
+                        } catch (e) {
+                            console.warn('Failed to render annotation preview:', e);
                         }
                     } else {
                         modalBody.innerHTML = `
@@ -581,6 +583,132 @@
                     console.error('Error:', error);
                     alert('网络错误，请稍后重试');
                 });
+        }
+
+        // ---------- 标注预览渲染 ----------
+        function getTagColor(tag) {
+            let hash = 0;
+            for (let i = 0; i < tag.length; i++) {
+                hash = ((hash << 5) - hash) + tag.charCodeAt(i);
+                hash |= 0;
+            }
+            const h = Math.abs(hash) % 360;
+            return `hsl(${h}, 70%, 45%)`;
+        }
+
+        function drawRoundedRect(ctx, x, y, w, h, r) {
+            r = Math.min(r, w/2, h/2);
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function renderAnnotationPreview(task, annotations) {
+            const canvas = document.getElementById('annotationPreviewCanvas');
+            const message = document.getElementById('annotationPreviewMessage');
+            message.textContent = '加载中...';
+            const ctx = canvas.getContext('2d');
+
+            // 如果没有 annotations
+            if (!annotations || annotations.length === 0) {
+                canvas.style.display = 'none';
+                message.textContent = '该任务暂无标注内容';
+                return;
+            }
+
+            // 取最近一次的 annotations
+            const last = annotations[annotations.length - 1];
+            const polygons = last.polygons || [];
+
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = function() {
+                message.textContent = '';
+                canvas.style.display = 'inline-block';
+
+                // 计算最大可用尺寸
+                const container = document.getElementById('annotationPreview');
+                const maxW = Math.min(container.clientWidth - 20, 800);
+                const maxH = 420;
+                const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+
+                // 清理并绘制
+                ctx.clearRect(0,0,canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                // 绘制每个多边形
+                polygons.forEach(polygon => {
+                    if (!polygon.points || polygon.points.length < 3) return;
+
+                    ctx.beginPath();
+                    const first = polygon.points[0];
+                    ctx.moveTo(first.x * scale, first.y * scale);
+                    for (let i = 1; i < polygon.points.length; i++) {
+                        const p = polygon.points[i];
+                        ctx.lineTo(p.x * scale, p.y * scale);
+                    }
+                    ctx.closePath();
+                    ctx.strokeStyle = 'red';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.fillStyle = 'rgba(255,0,0,0.12)';
+                    ctx.fill();
+
+                    // 标签
+                    if (polygon.tag) {
+                        const centroid = polygon.points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), {x:0,y:0});
+                        centroid.x /= polygon.points.length;
+                        centroid.y /= polygon.points.length;
+                        const cx = centroid.x * scale;
+                        const cy = centroid.y * scale;
+
+                        ctx.save();
+                        ctx.font = 'bold 12px sans-serif';
+                        ctx.textBaseline = 'middle';
+                        ctx.textAlign = 'left';
+                        const padding = 6;
+                        const text = polygon.tag;
+                        const metrics = ctx.measureText(text);
+                        const textW = metrics.width;
+                        const rectW = textW + padding*2;
+                        const rectH = 18;
+
+                        let left = cx + 6;
+                        let top = cy - 6 - rectH;
+                        if (left + rectW + 4 > canvas.width) left = canvas.width - rectW - 4;
+                        if (left < 4) left = 4;
+                        if (top < 4) top = cy + 6;
+
+                        const bg = getTagColor(text);
+                        ctx.fillStyle = bg;
+                        ctx.shadowColor = 'rgba(0,0,0,0.25)';
+                        ctx.shadowBlur = 4;
+                        ctx.shadowOffsetX = 0;
+                        ctx.shadowOffsetY = 2;
+                        drawRoundedRect(ctx, left, top, rectW, rectH, 6);
+
+                        ctx.fillStyle = '#fff';
+                        ctx.fillText(text, left + padding, top + rectH/2);
+                        ctx.restore();
+                    }
+                });
+            };
+
+            img.onerror = function() {
+                canvas.style.display = 'none';
+                message.textContent = '无法加载图片预览';
+            };
+
+            // 设置图片 src
+            img.src = '/uploads/' + encodeURI(task.filename);
         }
         
         // 删除任务

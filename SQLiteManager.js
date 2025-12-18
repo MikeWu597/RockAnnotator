@@ -458,6 +458,27 @@ class SQLiteManager {
         });
     }
 
+    // 根据任务ID获取相关的 annotations（content 字段解析为 JSON）
+    getAnnotationsByTaskId(taskId) {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                SELECT content FROM annotations
+                WHERE instr(content, '"taskId":' || ?) > 0
+                   OR instr(content, '"taskId": ' || ?) > 0
+            `;
+
+            this.db.all(sql, [String(taskId), String(taskId)], (err, rows) => {
+                if (err) return reject(err);
+                try {
+                    const parsed = rows.map(r => JSON.parse(r.content));
+                    resolve(parsed);
+                } catch (parseErr) {
+                    reject(parseErr);
+                }
+            });
+        });
+    }
+
     /**
      * 删除标注任务
      */

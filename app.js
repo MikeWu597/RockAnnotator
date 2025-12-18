@@ -328,10 +328,18 @@ app.get('/api/admin/tasks/:id', isAuthenticated, async (req, res) => {
         error: '任务未找到'
       });
     }
+
+    // 查询该任务相关的 annotations（如果有）
+    let annotations = [];
+    try {
+      annotations = await dbManager.getAnnotationsByTaskId(taskId);
+    } catch (err) {
+      console.warn('Failed to load annotations for task', taskId, err.message);
+    }
     
     res.json({
       success: true,
-      data: task
+      data: Object.assign({}, task, { annotations })
     });
   } catch (error) {
     res.status(500).json({
