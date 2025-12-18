@@ -5,46 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>标注任务管理 - RockAnnotator</title>
     <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome 图标 -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/all.min.css">
     <!-- 自定义样式 -->
     <link href="/admin/css/style.css" rel="stylesheet">
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="/admin/dashboard">
-                <i class="fas fa-cog me-2"></i>RockAnnotator 管理面板
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/admin/dashboard">仪表盘</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/admin/upload">图片上传</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link active" href="/admin/tasks">标注任务</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#">数据导出</a>
-                    </li>
-                </ul>
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/admin/logout">
-                            <i class="fas fa-sign-out-alt me-1"></i>退出登录
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+    <div id="admin-navbar"></div>
     
     <div class="container-fluid">
         <!-- 页面标题 -->
@@ -201,6 +169,8 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Font Awesome 图标 -->
     <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+    <!-- 公共 Admin JS（负责加载统一导航等） -->
+    <script src="/admin/js/main.js"></script>
     
     <script>
         // 全局变量

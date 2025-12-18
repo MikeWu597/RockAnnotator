@@ -1,17 +1,21 @@
-// 更新当前时间显示
+// 更新当前时间显示（仅当存在占位元素时）
 function updateTime() {
+    const el = document.getElementById('current-time');
+    if (!el) return;
     const now = new Date();
     const timeString = now.toLocaleString('zh-CN');
-    document.getElementById('current-time').textContent = timeString;
+    el.textContent = timeString;
 }
 
 // 页面加载完成后执行
 document.addEventListener('DOMContentLoaded', function() {
-    // 初始化时间显示
+    // 初始化时间显示（可选）
     updateTime();
-    
-    // 每秒更新一次时间
-    setInterval(updateTime, 1000);
+    const hasClock = !!document.getElementById('current-time');
+    if (hasClock) {
+        // 每秒更新一次时间
+        setInterval(updateTime, 1000);
+    }
     
     // 为所有卡片添加悬停效果
     const cards = document.querySelectorAll('.card');
@@ -26,6 +30,26 @@ document.addEventListener('DOMContentLoaded', function() {
             this.style.boxShadow = '';
         });
     });
+});
+
+// 动态加载统一的 Admin Navbar 并高亮当前页
+document.addEventListener('DOMContentLoaded', async function() {
+    const mount = document.getElementById('admin-navbar');
+    if (!mount) return;
+    try {
+        const resp = await fetch('/admin/partials/navbar.html', { cache: 'no-store' });
+        const html = await resp.text();
+        mount.innerHTML = html;
+        const path = window.location.pathname;
+        mount.querySelectorAll('.navbar .nav-link').forEach(a => {
+            const href = a.getAttribute('href');
+            if (href && href === path) {
+                a.classList.add('active');
+            }
+        });
+    } catch (e) {
+        console.warn('加载导航失败:', e);
+    }
 });
 
 // 确认退出登录
