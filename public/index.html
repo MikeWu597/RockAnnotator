@@ -156,8 +156,11 @@
         let isDragging = false;
         let lastX = 0;
         let lastY = 0;
-        let polygons = []; // 存储已完成的多边形
-        let currentPolygon = []; // 存储当前正在绘制的多边形顶点
+        // 最近一次鼠标在画布上的位置（用于工具按钮缩放时作为中心）
+        let lastMouseCanvasX = 0;
+        let lastMouseCanvasY = 0;
+        let polygons = []; // 存储已完成的多边形（图片坐标）
+        let currentPolygon = []; // 存储当前正在绘制的多边形顶点（图片坐标）
         let isDrawing = false;
         
         // 页面加载完成后初始化
@@ -372,74 +375,75 @@
             drawCurrentPolygon();
         }
         
-        // 绘制已完成的多边形
+        // 绘制已完成的多边形（polygons 存储为图片坐标，绘制时转换为画布坐标）
         function drawPolygons() {
             ctx.strokeStyle = 'red';
             ctx.lineWidth = 2;
             ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
-            
+
             polygons.forEach(polygon => {
                 if (polygon.length < 3) return;
-                
+
                 ctx.beginPath();
-                const firstPoint = canvasToImageCoords(polygon[0].x, polygon[0].y);
-                ctx.moveTo(firstPoint.x, firstPoint.y);
-                
+                const first = imageToCanvasCoords(polygon[0].x, polygon[0].y);
+                ctx.moveTo(first.x, first.y);
+
                 for (let i = 1; i < polygon.length; i++) {
-                    const point = canvasToImageCoords(polygon[i].x, polygon[i].y);
-                    ctx.lineTo(point.x, point.y);
+                    const pCanvas = imageToCanvasCoords(polygon[i].x, polygon[i].y);
+                    ctx.lineTo(pCanvas.x, pCanvas.y);
                 }
-                
+
                 ctx.closePath();
                 ctx.stroke();
                 ctx.fill();
             });
         }
         
-        // 绘制当前正在绘制的多边形
+        // 绘制当前正在绘制的多边形（currentPolygon 存储为图片坐标）
         function drawCurrentPolygon() {
             if (currentPolygon.length === 0) return;
-            
+
             ctx.strokeStyle = 'blue';
             ctx.lineWidth = 2;
             ctx.fillStyle = 'rgba(0, 0, 255, 0.3)';
-            
-            // 绘制顶点间的连线
+
+            // 绘制顶点间的连线（转换为画布坐标后绘制）
             if (currentPolygon.length > 1) {
                 ctx.beginPath();
-                const firstPoint = canvasToImageCoords(currentPolygon[0].x, currentPolygon[0].y);
-                ctx.moveTo(firstPoint.x, firstPoint.y);
-                
+                const first = imageToCanvasCoords(currentPolygon[0].x, currentPolygon[0].y);
+                ctx.moveTo(first.x, first.y);
+
                 for (let i = 1; i < currentPolygon.length; i++) {
-                    const point = canvasToImageCoords(currentPolygon[i].x, currentPolygon[i].y);
-                    ctx.lineTo(point.x, point.y);
+                    const pCanvas = imageToCanvasCoords(currentPolygon[i].x, currentPolygon[i].y);
+                    ctx.lineTo(pCanvas.x, pCanvas.y);
                 }
-                
+
                 ctx.stroke();
             }
-            
+
             // 绘制顶点
             currentPolygon.forEach(point => {
+                const pCanvas = imageToCanvasCoords(point.x, point.y);
                 ctx.beginPath();
-                ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+                ctx.arc(pCanvas.x, pCanvas.y, 4, 0, Math.PI * 2);
                 ctx.fillStyle = 'blue';
                 ctx.fill();
                 ctx.strokeStyle = 'white';
                 ctx.lineWidth = 1;
                 ctx.stroke();
             });
-            
-            // 如果至少有3个点，绘制预览填充区域
+
+            // 如果至少有3个点，绘制预览填充区域（先将点转换为画布坐标）
             if (currentPolygon.length >= 3) {
                 ctx.beginPath();
-                const firstPoint = canvasToImageCoords(currentPolygon[0].x, currentPolygon[0].y);
-                ctx.moveTo(firstPoint.x, firstPoint.y);
-                
+                const first = imageToCanvasCoords(currentPolygon[0].x, currentPolygon[0].y);
+                ctx.moveTo(first.x, first.y);
+
                 for (let i = 1; i < currentPolygon.length; i++) {
-                    const point = canvasToImageCoords(currentPolygon[i].x, currentPolygon[i].y);
-                    ctx.lineTo(point.x, point.y);
+                    const pCanvas = imageToCanvasCoords(currentPolygon[i].x, currentPolygon[i].y);
+                    ctx.lineTo(pCanvas.x, pCanvas.y);
                 }
-                
+
                 // 连接最后一个点到第一个点
                 ctx.closePath();
                 ctx.fillStyle = 'rgba(0, 0, 255, 0.1)';
@@ -460,7 +464,10 @@
             canvas.addEventListener('mousedown', handleMouseDown);
             canvas.addEventListener('mousemove', handleMouseMove);
             canvas.addEventListener('mouseup', handleMouseUp);
-            canvas.addEventListener('wheel', handleWheel);
+            // wheel需要阻止默认滚动，设置 passive: false
+            canvas.addEventListener('wheel', handleWheel, { passive: false });
+            // 阻止右键菜单以便右键用于平移
+            canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
             
             // 键盘事件
             document.addEventListener('keydown', handleKeyDown);
@@ -475,18 +482,28 @@
         
         // 鼠标按下事件
         function handleMouseDown(e) {
-            if (e.button !== 0) return; // 只处理左键
-            
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            
+
+            // 中键(1)或右键(2)用于平移
+            if (e.button === 1 || e.button === 2) {
+                isDragging = true;
+                lastX = x;
+                lastY = y;
+                return;
+            }
+
+            // 只处理左键用于绘制顶点
+            if (e.button !== 0) return;
+
             if (isNearFirstPoint(x, y) && currentPolygon.length >= 3) {
                 // 完成多边形绘制
                 finishPolygon();
             } else {
-                // 添加新顶点
-                currentPolygon.push({x: x, y: y});
+                // 将点转换为图片坐标后存储，这样缩放/平移时点会随图片同步变换
+                const imgCoords = canvasToImageCoords(x, y);
+                currentPolygon.push({x: imgCoords.x, y: imgCoords.y});
                 drawImage();
                 updatePolygonCount();
             }
@@ -494,18 +511,22 @@
         
         // 鼠标移动事件
         function handleMouseMove(e) {
-            if (!isDragging) return;
-            
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            
+
+            // 保存最后的鼠标位置（用于工具栏缩放以最近鼠标位置为中心）
+            lastMouseCanvasX = x;
+            lastMouseCanvasY = y;
+
+            if (!isDragging) return;
+
             // 平移图片
             offsetX += (x - lastX);
             offsetY += (y - lastY);
             lastX = x;
             lastY = y;
-            
+
             drawImage();
         }
         
@@ -513,33 +534,35 @@
         function handleMouseUp(e) {
             isDragging = false;
         }
+
+        // 鼠标离开画布时取消拖拽
+        canvas.addEventListener('mouseleave', function() {
+            isDragging = false;
+        });
         
-        // 鼠标滚轮事件（缩放）
+        // 缩放工具：以给定画布坐标为中心缩放
+        function zoomAt(canvasX, canvasY, scaleFactor) {
+            const oldScale = scale;
+            scale = Math.max(0.1, Math.min(scale * scaleFactor, 10));
+            // 调整偏移量以实现围绕指定点缩放
+            offsetX = canvasX - (canvasX - offsetX) * (scale / oldScale);
+            offsetY = canvasY - (canvasY - offsetY) * (scale / oldScale);
+            drawImage();
+            updateZoomLevel();
+        }
+
+        // 鼠标滚轮事件（缩放），以鼠标位置为中心
         function handleWheel(e) {
             e.preventDefault();
-            
+
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            
-            const zoomIntensity = 0.1;
-            const oldScale = scale;
-            
-            if (e.deltaY < 0) {
-                scale *= (1 + zoomIntensity); // 放大
-            } else {
-                scale *= (1 - zoomIntensity); // 缩小
-            }
-            
-            // 限制缩放范围
-            scale = Math.max(0.1, Math.min(scale, 10));
-            
-            // 调整偏移量以实现围绕鼠标位置缩放
-            offsetX = x - (x - offsetX) * (scale / oldScale);
-            offsetY = y - (y - offsetY) * (scale / oldScale);
-            
-            drawImage();
-            updateZoomLevel();
+
+            // 更平滑的缩放因子，兼容鼠标滚轮和触控板
+            const scaleFactor = Math.exp(-e.deltaY * 0.001);
+
+            zoomAt(x, y, scaleFactor);
         }
         
         // 键盘按下事件
@@ -551,36 +574,18 @@
             saveAndLoadNew();
         }
         
-        // 放大
+        // 放大（以最近鼠标位置为中心，如果没有鼠标位置则以画布中心为中心）
         function zoomIn() {
-            const oldScale = scale;
-            scale *= 1.2;
-            scale = Math.min(scale, 10);
-            
-            // 调整偏移量使缩放居中
-            const centerX = canvas.width / 2;
-            const centerY = canvas.height / 2;
-            offsetX = centerX - (centerX - offsetX) * (scale / oldScale);
-            offsetY = centerY - (centerY - offsetY) * (scale / oldScale);
-            
-            drawImage();
-            updateZoomLevel();
+            const centerX = (typeof lastMouseCanvasX === 'number' && lastMouseCanvasX !== undefined) ? lastMouseCanvasX : canvas.width / 2;
+            const centerY = (typeof lastMouseCanvasY === 'number' && lastMouseCanvasY !== undefined) ? lastMouseCanvasY : canvas.height / 2;
+            zoomAt(centerX, centerY, 1.2);
         }
         
-        // 缩小
+        // 缩小（以最近鼠标位置为中心）
         function zoomOut() {
-            const oldScale = scale;
-            scale *= 0.8;
-            scale = Math.max(scale, 0.1);
-            
-            // 调整偏移量使缩放居中
-            const centerX = canvas.width / 2;
-            const centerY = canvas.height / 2;
-            offsetX = centerX - (centerX - offsetX) * (scale / oldScale);
-            offsetY = centerY - (centerY - offsetY) * (scale / oldScale);
-            
-            drawImage();
-            updateZoomLevel();
+            const centerX = (typeof lastMouseCanvasX === 'number' && lastMouseCanvasX !== undefined) ? lastMouseCanvasX : canvas.width / 2;
+            const centerY = (typeof lastMouseCanvasY === 'number' && lastMouseCanvasY !== undefined) ? lastMouseCanvasY : canvas.height / 2;
+            zoomAt(centerX, centerY, 0.8);
         }
         
         // 重置视图
@@ -611,9 +616,10 @@
         // 检查点是否接近第一个点（用于闭合多边形）
         function isNearFirstPoint(x, y) {
             if (currentPolygon.length < 3) return false;
-            
-            const firstPoint = currentPolygon[0];
-            const distance = Math.sqrt(Math.pow(x - firstPoint.x, 2) + Math.pow(y - firstPoint.y, 2));
+
+            const firstPointImg = currentPolygon[0];
+            const firstPointCanvas = imageToCanvasCoords(firstPointImg.x, firstPointImg.y);
+            const distance = Math.sqrt(Math.pow(x - firstPointCanvas.x, 2) + Math.pow(y - firstPointCanvas.y, 2));
             return distance < 10; // 10像素内的距离认为是闭合
         }
         
@@ -647,14 +653,12 @@
             try {
                 annotationData = {
                     taskId: currentTaskId,
+                    // polygons 已以图片坐标存储，直接发送（保留两位小数）
                     polygons: polygons.map(polygon => 
-                        polygon.map(point => {
-                            const imgCoords = canvasToImageCoords(point.x, point.y);
-                            return {
-                                x: Math.round(imgCoords.x * 100) / 100, // 保留两位小数
-                                y: Math.round(imgCoords.y * 100) / 100
-                            };
-                        })
+                        polygon.map(point => ({
+                            x: Math.round(point.x * 100) / 100,
+                            y: Math.round(point.y * 100) / 100
+                        }))
                     )
                 };
                 
