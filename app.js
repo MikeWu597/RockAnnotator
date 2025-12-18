@@ -15,6 +15,14 @@ const config = YAML.load(path.join(__dirname, 'config.yml'));
 const app = express();
 const port = process.env.PORT || config.server.port;
 
+// 增加payload大小限制
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ extended: true, limit: '500mb' }));
+
+// 设置静态资源目录
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // 配置multer用于文件上传
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -26,7 +34,8 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ 
+// 创建两个multer实例，分别处理单文件和多文件上传
+const singleUpload = multer({ 
   storage: storage,
   fileFilter: function (req, file, cb) {
     // 只允许jpg和png格式
@@ -37,17 +46,26 @@ const upload = multer({
     }
   },
   limits: {
-    fileSize: 5 * 1024 * 1024 // 限制文件大小为5MB
+    fileSize: 50 * 1024 * 1024, // 限制文件大小为50MB
+    files: 1000 // 限制文件数量为1000个
   }
 });
 
-// 中间件
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// 设置静态资源目录
-app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const batchUpload = multer({ 
+  storage: storage,
+  fileFilter: function (req, file, cb) {
+    // 只允许jpg和png格式
+    if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/png') {
+      cb(null, true);
+    } else {
+      cb(new Error('只允许上传JPG和PNG格式的图片'));
+    }
+  },
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 限制文件大小为50MB
+    files: 1000 // 限制文件数量为1000个
+  }
+});
 
 // 配置Session存储
 app.use(session({
@@ -163,8 +181,8 @@ app.get('/admin/tasks', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin', 'tasks.html'));
 });
 
-// 处理图片上传的API
-app.post('/api/admin/images/upload', isAuthenticated, upload.single('image'), async (req, res) => {
+// 处理单个图片上传的API
+app.post('/api/admin/images/upload', isAuthenticated, singleUpload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: '请选择要上传的图片' });
@@ -193,6 +211,61 @@ app.post('/api/admin/images/upload', isAuthenticated, upload.single('image'), as
     });
   } catch (error) {
     console.error('Upload error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 处理批量图片上传的API
+app.post('/api/admin/images/upload/batch', isAuthenticated, batchUpload.array('images', 1000), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: '请选择要上传的图片' });
+    }
+    
+    const results = {
+      success: [],
+      failed: []
+    };
+    
+    // 顺序处理每个文件
+    for (const file of req.files) {
+      try {
+        // 读取文件并获取图片尺寸信息
+        const buffer = fs.readFileSync(file.path);
+        const dimensions = imageSize(buffer);
+        
+        // 保存图片信息到数据库
+        const imageId = await dbManager.insertImage(file.filename, dimensions.width, dimensions.height);
+        
+        // 为上传的图片创建标注任务
+        await dbManager.createAnnotationTask(imageId);
+        
+        results.success.push({
+          id: imageId,
+          filename: file.filename,
+          width: dimensions.width,
+          height: dimensions.height,
+          size: file.size
+        });
+      } catch (error) {
+        console.error('Batch upload error for file:', file.filename, error);
+        results.failed.push({
+          filename: file.filename,
+          error: error.message
+        });
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `成功上传 ${results.success.length} 个文件，失败 ${results.failed.length} 个`,
+      data: results
+    });
+  } catch (error) {
+    console.error('Batch upload error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -271,21 +344,11 @@ app.get('/api/admin/tasks/:id', isAuthenticated, async (req, res) => {
   }
 });
 
-// 更新标注任务状态的API
-app.put('/api/admin/tasks/:id/status', isAuthenticated, async (req, res) => {
+// 删除标注任务的API
+app.delete('/api/admin/tasks/:id', isAuthenticated, async (req, res) => {
   try {
     const taskId = parseInt(req.params.id);
-    const { status } = req.body;
-    
-    // 验证状态值
-    if (!['pending', 'completed'].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        error: '无效的状态值'
-      });
-    }
-    
-    const result = await dbManager.updateAnnotationTaskStatus(taskId, status);
+    const result = await dbManager.deleteAnnotationTaskById(taskId);
     
     if (result === 0) {
       return res.status(404).json({
@@ -294,9 +357,19 @@ app.put('/api/admin/tasks/:id/status', isAuthenticated, async (req, res) => {
       });
     }
     
+    // 尝试删除上传的文件
+    try {
+      const filePath = path.join(__dirname, 'uploads', result.filename);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (fileError) {
+      console.warn('Failed to delete file:', fileError.message);
+    }
+    
     res.json({
       success: true,
-      message: '任务状态更新成功'
+      message: '任务删除成功'
     });
   } catch (error) {
     res.status(500).json({

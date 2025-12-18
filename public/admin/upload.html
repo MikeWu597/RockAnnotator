@@ -61,30 +61,67 @@
             <div class="col-md-8 mx-auto">
                 <div class="card">
                     <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="fas fa-cloud-upload-alt me-2"></i>选择图片文件
-                        </h5>
+                        <ul class="nav nav-tabs card-header-tabs" id="uploadTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="single-tab" data-bs-toggle="tab" data-bs-target="#single" type="button" role="tab">
+                                    单张上传
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="batch-tab" data-bs-toggle="tab" data-bs-target="#batch" type="button" role="tab">
+                                    批量上传
+                                </button>
+                            </li>
+                        </ul>
                     </div>
                     <div class="card-body">
-                        <form id="uploadForm">
-                            <div class="mb-3">
-                                <label for="image" class="form-label">选择图片</label>
-                                <input class="form-control" type="file" id="image" name="image" accept=".jpg,.jpeg,.png" required>
-                                <div class="form-text">
-                                    <i class="fas fa-info-circle me-1"></i>
-                                    支持 JPG 和 PNG 格式，文件大小不超过 5MB
-                                </div>
+                        <div class="tab-content" id="uploadTabsContent">
+                            <!-- 单张上传表单 -->
+                            <div class="tab-pane fade show active" id="single" role="tabpanel">
+                                <form id="uploadForm">
+                                    <div class="mb-3">
+                                        <label for="image" class="form-label">选择图片</label>
+                                        <input class="form-control" type="file" id="image" name="image" accept=".jpg,.jpeg,.png" required>
+                                        <div class="form-text">
+                                            <i class="fas fa-info-circle me-1"></i>
+                                            支持 JPG 和 PNG 格式，文件大小不超过 50MB
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                        <a href="/admin/dashboard" class="btn btn-secondary">
+                                            <i class="fas fa-arrow-left me-1"></i>返回
+                                        </a>
+                                        <button type="submit" class="btn btn-primary" id="uploadBtn">
+                                            <i class="fas fa-upload me-1"></i>上传图片
+                                        </button>
+                                    </div>
+                                </form>
                             </div>
                             
-                            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                                <a href="/admin/dashboard" class="btn btn-secondary">
-                                    <i class="fas fa-arrow-left me-1"></i>返回
-                                </a>
-                                <button type="submit" class="btn btn-primary" id="uploadBtn">
-                                    <i class="fas fa-upload me-1"></i>上传图片
-                                </button>
+                            <!-- 批量上传表单 -->
+                            <div class="tab-pane fade" id="batch" role="tabpanel">
+                                <form id="batchUploadForm">
+                                    <div class="mb-3">
+                                        <label for="images" class="form-label">选择多张图片</label>
+                                        <input class="form-control" type="file" id="images" name="images" accept=".jpg,.jpeg,.png" multiple required>
+                                        <div class="form-text">
+                                            <i class="fas fa-info-circle me-1"></i>
+                                            支持 JPG 和 PNG 格式，最多可同时选择 1000 张图片，每张大小不超过 50MB
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                        <a href="/admin/dashboard" class="btn btn-secondary">
+                                            <i class="fas fa-arrow-left me-1"></i>返回
+                                        </a>
+                                        <button type="submit" class="btn btn-primary" id="batchUploadBtn">
+                                            <i class="fas fa-upload me-1"></i>批量上传
+                                        </button>
+                                    </div>
+                                </form>
                             </div>
-                        </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -116,6 +153,7 @@
                             <li>图片信息（文件名、尺寸等）将记录在数据库中</li>
                             <li>上传成功后会自动创建标注任务</li>
                             <li>请确保图片内容符合标注任务的要求</li>
+                            <li>单张图片最大支持50MB，批量上传最多支持1000张图片</li>
                         </ul>
                     </div>
                 </div>
@@ -129,7 +167,7 @@
     <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
     
     <script>
-        // 表单提交处理
+        // 单张图片上传处理
         document.getElementById('uploadForm').addEventListener('submit', function(e) {
             e.preventDefault();
             
@@ -153,64 +191,7 @@
             .then(response => response.json())
             .then(data => {
                 // 显示结果
-                const resultSection = document.getElementById('resultSection');
-                const resultTitle = document.getElementById('resultTitle');
-                const resultBody = document.getElementById('resultBody');
-                
-                resultSection.classList.remove('d-none');
-                
-                if (data.success) {
-                    resultTitle.innerHTML = '<i class="fas fa-check-circle text-success me-2"></i>上传成功';
-                    resultBody.innerHTML = `
-                        <div class="alert alert-success" role="alert">
-                            <h4 class="alert-heading">图片 "${data.data.filename}" 上传成功!</h4>
-                            <p>图片信息已保存到数据库，并已创建标注任务。</p>
-                            <hr>
-                            <p class="mb-0">
-                                尺寸: ${data.data.width} x ${data.data.height} 像素<br>
-                                文件大小: ${(data.data.size / 1024).toFixed(2)} KB
-                            </p>
-                        </div>
-                        <div class="mt-3">
-                            <a href="/admin/tasks" class="btn btn-success">
-                                <i class="fas fa-tasks me-1"></i>查看标注任务
-                            </a>
-                            <button id="continueUpload" class="btn btn-primary">
-                                <i class="fas fa-plus me-1"></i>继续上传
-                            </button>
-                            <a href="/admin/dashboard" class="btn btn-secondary">
-                                <i class="fas fa-tachometer-alt me-1"></i>返回管理面板
-                            </a>
-                        </div>
-                    `;
-                    
-                    // 绑定继续上传按钮事件
-                    document.getElementById('continueUpload').addEventListener('click', function() {
-                        resultSection.classList.add('d-none');
-                        document.getElementById('uploadForm').reset();
-                    });
-                } else {
-                    resultTitle.innerHTML = '<i class="fas fa-exclamation-triangle text-danger me-2"></i>上传失败';
-                    resultBody.innerHTML = `
-                        <div class="alert alert-danger" role="alert">
-                            <h4 class="alert-heading">上传失败!</h4>
-                            <p>发生错误: ${data.error}</p>
-                        </div>
-                        <div class="mt-3">
-                            <button id="retryUpload" class="btn btn-primary">
-                                <i class="fas fa-redo me-1"></i>重新上传
-                            </button>
-                            <a href="/admin/dashboard" class="btn btn-secondary">
-                                <i class="fas fa-tachometer-alt me-1"></i>返回管理面板
-                            </a>
-                        </div>
-                    `;
-                    
-                    // 绑定重新上传按钮事件
-                    document.getElementById('retryUpload').addEventListener('click', function() {
-                        resultSection.classList.add('d-none');
-                    });
-                }
+                showResult(data, false);
             })
             .catch(error => {
                 console.error('Error:', error);
@@ -247,6 +228,196 @@
                 uploadBtn.disabled = false;
             });
         });
+        
+        // 批量上传处理
+        document.getElementById('batchUploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const uploadBtn = document.getElementById('batchUploadBtn');
+            const originalText = uploadBtn.innerHTML;
+            
+            // 显示加载状态
+            uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>上传中...';
+            uploadBtn.disabled = true;
+            
+            // 创建FormData对象
+            const formData = new FormData();
+            const imageFiles = document.getElementById('images').files;
+            
+            // 添加所有文件到FormData
+            for (let i = 0; i < imageFiles.length; i++) {
+                formData.append('images', imageFiles[i]);
+            }
+            
+            // 发送请求到API
+            fetch('/api/admin/images/upload/batch', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 显示结果
+                showResult(data, true);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                // 显示错误结果
+                const resultSection = document.getElementById('resultSection');
+                const resultTitle = document.getElementById('resultTitle');
+                const resultBody = document.getElementById('resultBody');
+                
+                resultSection.classList.remove('d-none');
+                resultTitle.innerHTML = '<i class="fas fa-exclamation-triangle text-danger me-2"></i>上传失败';
+                resultBody.innerHTML = `
+                    <div class="alert alert-danger" role="alert">
+                        <h4 class="alert-heading">网络错误!</h4>
+                        <p>发生错误: ${error.message}</p>
+                    </div>
+                    <div class="mt-3">
+                        <button id="retryUpload" class="btn btn-primary">
+                            <i class="fas fa-redo me-1"></i>重新上传
+                        </button>
+                        <a href="/admin/dashboard" class="btn btn-secondary">
+                            <i class="fas fa-tachometer-alt me-1"></i>返回管理面板
+                        </a>
+                    </div>
+                `;
+                
+                // 绑定重新上传按钮事件
+                document.getElementById('retryUpload').addEventListener('click', function() {
+                    resultSection.classList.add('d-none');
+                });
+            })
+            .finally(() => {
+                // 恢复按钮状态
+                uploadBtn.innerHTML = originalText;
+                uploadBtn.disabled = false;
+            });
+        });
+        
+        // 显示上传结果
+        function showResult(data, isBatch) {
+            const resultSection = document.getElementById('resultSection');
+            const resultTitle = document.getElementById('resultTitle');
+            const resultBody = document.getElementById('resultBody');
+            
+            resultSection.classList.remove('d-none');
+            
+            if (data.success) {
+                if (isBatch) {
+                    resultTitle.innerHTML = '<i class="fas fa-check-circle text-success me-2"></i>批量上传结果';
+                    let successHtml = '';
+                    let failedHtml = '';
+                    
+                    if (data.data.success.length > 0) {
+                        successHtml = `
+                            <h5 class="text-success">成功上传 ${data.data.success.length} 个文件:</h5>
+                            <ul class="list-group mb-3">
+                        `;
+                        data.data.success.forEach(item => {
+                            successHtml += `
+                                <li class="list-group-item">
+                                    <i class="fas fa-file-image me-2"></i><strong>${item.filename}</strong><br>
+                                    <small class="text-muted">
+                                        尺寸: ${item.width} x ${item.height} 像素 | 
+                                        大小: ${(item.size / 1024 / 1024).toFixed(2)} MB
+                                    </small>
+                                </li>
+                            `;
+                        });
+                        successHtml += '</ul>';
+                    }
+                    
+                    if (data.data.failed.length > 0) {
+                        failedHtml = `
+                            <h5 class="text-danger">失败 ${data.data.failed.length} 个文件:</h5>
+                            <ul class="list-group">
+                        `;
+                        data.data.failed.forEach(item => {
+                            failedHtml += `
+                                <li class="list-group-item">
+                                    <i class="fas fa-exclamation-circle me-2 text-danger"></i><strong>${item.filename}</strong><br>
+                                    <small class="text-muted">错误: ${item.error}</small>
+                                </li>
+                            `;
+                        });
+                        failedHtml += '</ul>';
+                    }
+                    
+                    resultBody.innerHTML = `
+                        <div class="alert alert-info" role="alert">
+                            <h4 class="alert-heading">批量上传完成!</h4>
+                            <p>${data.message}</p>
+                        </div>
+                        ${successHtml}
+                        ${failedHtml}
+                        <div class="mt-3">
+                            <a href="/admin/tasks" class="btn btn-success">
+                                <i class="fas fa-tasks me-1"></i>查看标注任务
+                            </a>
+                            <button id="continueUpload" class="btn btn-primary">
+                                <i class="fas fa-plus me-1"></i>继续上传
+                            </button>
+                            <a href="/admin/dashboard" class="btn btn-secondary">
+                                <i class="fas fa-tachometer-alt me-1"></i>返回管理面板
+                            </a>
+                        </div>
+                    `;
+                } else {
+                    resultTitle.innerHTML = '<i class="fas fa-check-circle text-success me-2"></i>上传成功';
+                    resultBody.innerHTML = `
+                        <div class="alert alert-success" role="alert">
+                            <h4 class="alert-heading">图片 "${data.data.filename}" 上传成功!</h4>
+                            <p>图片信息已保存到数据库，并已创建标注任务。</p>
+                            <hr>
+                            <p class="mb-0">
+                                尺寸: ${data.data.width} x ${data.data.height} 像素<br>
+                                文件大小: ${(data.data.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                        </div>
+                        <div class="mt-3">
+                            <a href="/admin/tasks" class="btn btn-success">
+                                <i class="fas fa-tasks me-1"></i>查看标注任务
+                            </a>
+                            <button id="continueUpload" class="btn btn-primary">
+                                <i class="fas fa-plus me-1"></i>继续上传
+                            </button>
+                            <a href="/admin/dashboard" class="btn btn-secondary">
+                                <i class="fas fa-tachometer-alt me-1"></i>返回管理面板
+                            </a>
+                        </div>
+                    `;
+                }
+                
+                // 绑定继续上传按钮事件
+                document.getElementById('continueUpload').addEventListener('click', function() {
+                    resultSection.classList.add('d-none');
+                    document.getElementById('uploadForm').reset();
+                    document.getElementById('batchUploadForm').reset();
+                });
+            } else {
+                resultTitle.innerHTML = '<i class="fas fa-exclamation-triangle text-danger me-2"></i>上传失败';
+                resultBody.innerHTML = `
+                    <div class="alert alert-danger" role="alert">
+                        <h4 class="alert-heading">上传失败!</h4>
+                        <p>发生错误: ${data.error}</p>
+                    </div>
+                    <div class="mt-3">
+                        <button id="retryUpload" class="btn btn-primary">
+                            <i class="fas fa-redo me-1"></i>重新上传
+                        </button>
+                        <a href="/admin/dashboard" class="btn btn-secondary">
+                            <i class="fas fa-tachometer-alt me-1"></i>返回管理面板
+                        </a>
+                    </div>
+                `;
+                
+                // 绑定重新上传按钮事件
+                document.getElementById('retryUpload').addEventListener('click', function() {
+                    resultSection.classList.add('d-none');
+                });
+            }
+        }
     </script>
 </body>
 </html>

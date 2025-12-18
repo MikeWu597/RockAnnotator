@@ -239,7 +239,8 @@ class SQLiteManager {
                 params.push(status);
             }
             
-            sql += ' ORDER BY at.created_at DESC LIMIT ? OFFSET ?';
+            // 默认按ID降序排序
+            sql += ' ORDER BY at.id DESC LIMIT ? OFFSET ?';
             params.push(pageSize, offset);
             
             this.db.all(sql, params, (err, rows) => {
@@ -276,30 +277,6 @@ class SQLiteManager {
     }
 
     /**
-     * 更新标注任务状态
-     */
-    updateAnnotationTaskStatus(taskId, status) {
-        return new Promise((resolve, reject) => {
-            let sql, params;
-            if (status === 'completed') {
-                sql = 'UPDATE annotation_tasks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?';
-                params = [status, taskId];
-            } else {
-                sql = 'UPDATE annotation_tasks SET status = ? WHERE id = ?';
-                params = [status, taskId];
-            }
-            
-            this.db.run(sql, params, function(err) {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve(this.changes);
-                }
-            });
-        });
-    }
-
-    /**
      * 根据ID获取标注任务
      */
     getAnnotationTaskById(id) {
@@ -324,6 +301,55 @@ class SQLiteManager {
                 } else {
                     resolve(row);
                 }
+            });
+        });
+    }
+
+    /**
+     * 删除标注任务
+     */
+    deleteAnnotationTaskById(id) {
+        return new Promise((resolve, reject) => {
+            // 先获取任务信息，以便后续可能需要的清理工作
+            const selectSql = `
+                SELECT at.image_id, i.filename
+                FROM annotation_tasks at
+                JOIN images i ON at.image_id = i.id
+                WHERE at.id = ?
+            `;
+            
+            this.db.get(selectSql, [id], (err, row) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                
+                if (!row) {
+                    resolve(0); // 未找到任务
+                    return;
+                }
+                
+                // 删除任务
+                const deleteSql = 'DELETE FROM annotation_tasks WHERE id = ?';
+                this.db.run(deleteSql, [id], (err) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        // 同时删除关联的图片记录
+                        const deleteImageSql = 'DELETE FROM images WHERE id = ?';
+                        this.db.run(deleteImageSql, [row.image_id], (err) => {
+                            if (err) {
+                                reject(err);
+                            } else {
+                                resolve({
+                                    taskId: id,
+                                    imageId: row.image_id,
+                                    filename: row.filename
+                                });
+                            }
+                        });
+                    }
+                });
             });
         });
     }
