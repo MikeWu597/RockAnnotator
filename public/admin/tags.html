@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>标签管理 - RockAnnotator</title>
+    <link href="/admin/css/style.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/admin/dashboard">
+                <i class="fas fa-cog me-2"></i>RockAnnotator 管理
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item"><a class="nav-link" href="/admin/dashboard">仪表盘</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/admin/upload">图片上传</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/admin/tasks">标注任务</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="/admin/tags">标签管理</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#">数据导出</a></li>
+                </ul>
+                <ul class="navbar-nav">
+                    <li class="nav-item"><a class="nav-link" href="/admin/logout"><i class="fas fa-sign-out-alt me-1"></i>退出登录</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <h3><i class="fas fa-tags me-2"></i>标签管理</h3>
+                <p class="text-muted">在此管理系统使用的标签（例如 car、man、bicycle）。</p>
+            </div>
+        </div>
+
+        <div class="row mt-3">
+            <div class="col-12 col-md-6">
+                <div class="input-group mb-3">
+                    <input id="newTagName" class="form-control" placeholder="输入新标签名称，例如: car">
+                    <button id="addTagBtn" class="btn btn-primary">添加</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-2">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <table class="table table-striped mb-0">
+                            <thead>
+                                <tr><th>名称</th><th style="width:150px">操作</th></tr>
+                            </thead>
+                            <tbody id="tagsTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadTags() {
+            const res = await fetch('/api/admin/tags');
+            const data = await res.json();
+            if (!data.success) return;
+            const tbody = document.getElementById('tagsTableBody');
+            tbody.innerHTML = '';
+            data.data.forEach(tag => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td><input class="form-control tag-name-input" data-id="${tag.id}" value="${tag.name}"></td>
+                                <td>
+                                    <button class="btn btn-sm btn-success save-btn" data-id="${tag.id}">保存</button>
+                                    <button class="btn btn-sm btn-danger delete-btn" data-id="${tag.id}">删除</button>
+                                </td>`;
+                tbody.appendChild(tr);
+            });
+
+            document.querySelectorAll('.save-btn').forEach(btn => btn.addEventListener('click', async (e) => {
+                const id = e.target.dataset.id;
+                const input = document.querySelector(`.tag-name-input[data-id='${id}']`);
+                const name = input.value.trim();
+                if (!name) return alert('名称不能为空');
+                await fetch(`/api/admin/tags/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name }) });
+                loadTags();
+            }));
+
+            document.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', async (e) => {
+                if (!confirm('确认删除标签？')) return;
+                const id = e.target.dataset.id;
+                await fetch(`/api/admin/tags/${id}`, { method: 'DELETE' });
+                loadTags();
+            }));
+        }
+
+        document.getElementById('addTagBtn').addEventListener('click', async () => {
+            const name = document.getElementById('newTagName').value.trim();
+            if (!name) return alert('请输入标签名称');
+            await fetch('/api/admin/tags', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name }) });
+            document.getElementById('newTagName').value = '';
+            loadTags();
+        });
+
+        // Highlight active nav link
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.navbar .nav-link').forEach(el => {
+                if (el.getAttribute('href') === window.location.pathname) {
+                    el.classList.add('active');
+                }
+            });
+            loadTags();
+        });
+    </script>
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/admin/js/main.js"></script>
+</body>
+</html>

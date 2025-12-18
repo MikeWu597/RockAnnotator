@@ -30,6 +30,9 @@
                         <a class="nav-link" href="/admin/tasks">标注任务</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="/admin/tags">标签管理</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="#">数据导出</a>
                     </li>
                 </ul>
@@ -57,7 +60,7 @@
         
         <!-- 功能卡片 -->
         <div class="row mt-4">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="card h-100">
                     <div class="card-body">
                         <h5 class="card-title">
@@ -69,7 +72,7 @@
                 </div>
             </div>
             
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="card h-100">
                     <div class="card-body">
                         <h5 class="card-title">
@@ -80,8 +83,20 @@
                     </div>
                 </div>
             </div>
+
+            <div class="col-md-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">
+                            <i class="fas fa-tags me-2"></i>标签管理
+                        </h5>
+                        <p class="card-text">管理标注时可用的标签（例如 car、man、bicycle）。</p>
+                        <a href="/admin/tags" class="btn btn-warning">管理标签</a>
+                    </div>
+                </div>
+            </div>
             
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="card h-100">
                     <div class="card-body">
                         <h5 class="card-title">
@@ -94,42 +109,7 @@
             </div>
         </div>
         
-        <!-- 统计卡片 -->
-        <div class="row mt-4">
-            <div class="col-md-4">
-                <div class="card stats-card">
-                    <div class="card-body">
-                        <h5 class="card-title">总用户数</h5>
-                        <div class="stats-number">128</div>
-                        <p class="text-success">
-                            <i class="fas fa-arrow-up me-1"></i>5% 较上月增长
-                        </p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-md-4">
-                <div class="card stats-card">
-                    <div class="card-body">
-                        <h5 class="card-title">标注总数</h5>
-                        <div class="stats-number">1,420</div>
-                        <p class="text-success">
-                            <i class="fas fa-arrow-up me-1"></i>12% 较上月增长
-                        </p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-md-4">
-                <div class="card stats-card">
-                    <div class="card-body">
-                        <h5 class="card-title">在线用户</h5>
-                        <div class="stats-number">24</div>
-                        <p class="text-muted">当前时间: <span id="current-time"></span></p>
-                    </div>
-                </div>
-            </div>
-        </div>
+        
         
         <!-- 最近上传的图片 -->
         <div class="row mt-4">

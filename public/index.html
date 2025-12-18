@@ -378,27 +378,39 @@
             drawCurrentPolygon();
         }
         
-        // 绘制已完成的多边形（polygons 存储为图片坐标，绘制时转换为画布坐标）
+        // 绘制已完成的多边形（polygons 存储为 {points:[], tag: ''}）
         function drawPolygons() {
             ctx.strokeStyle = 'red';
             ctx.lineWidth = 2;
             ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
 
             polygons.forEach(polygon => {
-                if (polygon.length < 3) return;
+                if (!polygon.points || polygon.points.length < 3) return;
 
                 ctx.beginPath();
-                const first = imageToCanvasCoords(polygon[0].x, polygon[0].y);
+                const first = imageToCanvasCoords(polygon.points[0].x, polygon.points[0].y);
                 ctx.moveTo(first.x, first.y);
 
-                for (let i = 1; i < polygon.length; i++) {
-                    const pCanvas = imageToCanvasCoords(polygon[i].x, polygon[i].y);
+                for (let i = 1; i < polygon.points.length; i++) {
+                    const pCanvas = imageToCanvasCoords(polygon.points[i].x, polygon.points[i].y);
                     ctx.lineTo(pCanvas.x, pCanvas.y);
                 }
 
                 ctx.closePath();
                 ctx.stroke();
                 ctx.fill();
+
+                // 在多边形中心显示标签（可选）
+                if (polygon.tag) {
+                    // 计算质心（图片坐标）并转换为画布坐标
+                    const centroid = polygon.points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), {x:0,y:0});
+                    centroid.x /= polygon.points.length;
+                    centroid.y /= polygon.points.length;
+                    const cCanvas = imageToCanvasCoords(centroid.x, centroid.y);
+                    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                    ctx.font = '12px sans-serif';
+                    ctx.fillText(polygon.tag, cCanvas.x + 6, cCanvas.y - 6);
+                }
             });
         }
         
@@ -481,6 +493,9 @@
             document.getElementById('resetViewBtn').addEventListener('click', resetView);
             document.getElementById('clearPolygonBtn').addEventListener('click', clearCurrentPolygon);
             document.getElementById('saveBtn').addEventListener('click', saveAndLoadNew);
+
+            // 加载可用标签列表
+            loadAvailableTags();
         }
         
         // 鼠标按下事件
@@ -654,10 +669,20 @@
             drawImage();
         }
         
-        // 完成多边形绘制
-        function finishPolygon() {
+        // 完成多边形绘制：弹出标签选择框，选择标签后才算完成
+        async function finishPolygon() {
             if (currentPolygon.length >= 3) {
-                polygons.push([...currentPolygon]);
+                try {
+                    const tag = await showTagPicker();
+                    if (!tag) {
+                        // 取消或未选择标签，保留当前多边形以便继续编辑
+                        return;
+                    }
+
+                    polygons.push({ points: [...currentPolygon], tag });
+                } catch (e) {
+                    console.error('Tag selection error:', e);
+                }
             }
             currentPolygon = [];
             drawImage();
@@ -702,15 +727,16 @@
             // 准备注释数据
             let annotationData;
             try {
-                annotationData = {
+                    annotationData = {
                     taskId: currentTaskId,
-                    // polygons 已以图片坐标存储，直接发送（保留两位小数）
-                    polygons: polygons.map(polygon => 
-                        polygon.map(point => ({
+                    // polygons 存储为 { points: [...], tag }
+                    polygons: polygons.map(polygon => ({
+                        tag: polygon.tag,
+                        points: polygon.points.map(point => ({
                             x: Math.round(point.x * 100) / 100,
                             y: Math.round(point.y * 100) / 100
                         }))
-                    )
+                    }))
                 };
                 
                 console.log('Prepared annotation data:', annotationData);
@@ -828,6 +854,72 @@
             const y = imageYPos + (imageY * scale);
             
             return {x, y};
+        }
+
+        // ----- 标签支持相关 -----
+        let availableTags = [];
+
+        async function loadAvailableTags() {
+            try {
+                const res = await fetch('/api/tags');
+                const data = await res.json();
+                if (data.success) availableTags = data.data.map(t => t.name);
+            } catch (e) {
+                console.warn('Failed to load tags:', e);
+            }
+        }
+
+        // 显示标签选择弹窗，返回 Promise resolved with tag name 或 null
+        function showTagPicker() {
+            return new Promise((resolve) => {
+                // 创建简单的 modal 内容
+                const modalId = 'tagPickerModal';
+                let modal = document.getElementById(modalId);
+                if (!modal) {
+                    modal = document.createElement('div');
+                    modal.id = modalId;
+                    modal.className = 'modal show';
+                    modal.style.display = 'none';
+                    modal.innerHTML = `
+                        <div class="modal-dialog modal-sm" role="document">
+                            <div class="modal-content">
+                                <div class="modal-header"><h5 class="modal-title">选择标签</h5></div>
+                                <div class="modal-body" id="tagPickerBody"></div>
+                                <div class="modal-footer">
+                                    <button id="tagPickerCancel" class="btn btn-secondary">取消</button>
+                                </div>
+                            </div>
+                        </div>`;
+                    document.body.appendChild(modal);
+                }
+
+                const body = modal.querySelector('#tagPickerBody');
+                body.innerHTML = '';
+
+                if (!availableTags || availableTags.length === 0) {
+                    body.innerHTML = '<div class="text-muted">暂无标签，请到管理页面添加。</div>';
+                } else {
+                    availableTags.forEach(tag => {
+                        const btn = document.createElement('button');
+                        btn.className = 'btn btn-outline-primary m-1';
+                        btn.textContent = tag;
+                        btn.addEventListener('click', () => {
+                            hideModal();
+                            resolve(tag);
+                        });
+                        body.appendChild(btn);
+                    });
+                }
+
+                const cancelBtn = modal.querySelector('#tagPickerCancel');
+                cancelBtn.onclick = () => { hideModal(); resolve(null); };
+
+                function hideModal() {
+                    modal.style.display = 'none';
+                }
+
+                modal.style.display = 'block';
+            });
         }
     </script>
 </body>

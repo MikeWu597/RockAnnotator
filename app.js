@@ -390,7 +390,7 @@ app.get('/api/tasks/random', async (req, res) => {
     }
     
     const imagePath = `/uploads/${task.filename}`;
-    
+
     res.json({
       success: true,
       data: {
@@ -411,6 +411,70 @@ app.get('/api/tasks/random', async (req, res) => {
   }
 });
 
+// 公共：获取标签列表（用于前端标注时弹窗）
+app.get('/api/tags', async (req, res) => {
+  try {
+    const tags = await dbManager.getAllTags();
+    res.json({ success: true, data: tags });
+  } catch (error) {
+    console.error('Error fetching tags:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 管理员：标签管理 API
+app.get('/api/admin/tags', isAuthenticated, async (req, res) => {
+  try {
+    const tags = await dbManager.getAllTags();
+    res.json({ success: true, data: tags });
+  } catch (error) {
+    console.error('Error fetching admin tags:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/admin/tags', isAuthenticated, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ success: false, error: '缺少标签名称' });
+    const id = await dbManager.addTag(name);
+    res.json({ success: true, data: { id, name } });
+  } catch (error) {
+    console.error('Error creating tag:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.put('/api/admin/tags/:id', isAuthenticated, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ success: false, error: '缺少标签名称' });
+    await dbManager.updateTag(id, name);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating tag:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.delete('/api/admin/tags/:id', isAuthenticated, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await dbManager.deleteTag(id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting tag:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 管理页面路由：标签管理
+app.get('/admin/tags', isAuthenticated, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin', 'tags.html'));
+});
+
+
 // 保存标注的API
 app.post('/api/annotations/save', async (req, res) => {
   try {
@@ -422,9 +486,12 @@ app.post('/api/annotations/save', async (req, res) => {
         error: '缺少必要参数'
       });
     }
-    
-    // 这里应该保存标注数据到数据库
-    // 当前版本只是简单地更新任务状态为已完成
+
+    // 将标注内容以 JSON 存入 annotations 表中
+    const content = JSON.stringify({ taskId, polygons });
+    await dbManager.insertAnnotation(null, content);
+
+    // 更新任务状态为已完成
     await dbManager.updateTaskStatusToCompleted(taskId);
     
     res.json({

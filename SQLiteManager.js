@@ -70,6 +70,12 @@ class SQLiteManager {
                     completed_at DATETIME NULL,
                     FOREIGN KEY (image_id) REFERENCES images (id)
                 );
+
+                CREATE TABLE IF NOT EXISTS tags (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT UNIQUE NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
             `;
 
             this.db.exec(createTableSQL, (err) => {
@@ -127,6 +133,70 @@ class SQLiteManager {
                     reject(err);
                 } else {
                     resolve(this.lastID);
+                }
+            });
+        });
+    }
+
+    /**
+     * 获取所有标签
+     */
+    getAllTags() {
+        return new Promise((resolve, reject) => {
+            const sql = 'SELECT * FROM tags ORDER BY name ASC';
+            this.db.all(sql, [], (err, rows) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(rows);
+                }
+            });
+        });
+    }
+
+    /**
+     * 添加标签
+     */
+    addTag(name) {
+        return new Promise((resolve, reject) => {
+            const sql = 'INSERT INTO tags (name) VALUES (?)';
+            this.db.run(sql, [name], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.lastID);
+                }
+            });
+        });
+    }
+
+    /**
+     * 更新标签
+     */
+    updateTag(id, name) {
+        return new Promise((resolve, reject) => {
+            const sql = 'UPDATE tags SET name = ? WHERE id = ?';
+            this.db.run(sql, [name, id], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.changes);
+                }
+            });
+        });
+    }
+
+    /**
+     * 删除标签
+     */
+    deleteTag(id) {
+        return new Promise((resolve, reject) => {
+            const sql = 'DELETE FROM tags WHERE id = ?';
+            this.db.run(sql, [id], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.changes);
                 }
             });
         });
