@@ -159,6 +159,9 @@
         // 最近一次鼠标在画布上的位置（用于工具按钮缩放时作为中心）
         let lastMouseCanvasX = 0;
         let lastMouseCanvasY = 0;
+        // 最近一次鼠标对应的图片坐标（用于工具按钮缩放，保证缩放以同一图片点为中心）
+        let lastMouseImageX = undefined;
+        let lastMouseImageY = undefined;
         let polygons = []; // 存储已完成的多边形（图片坐标）
         let currentPolygon = []; // 存储当前正在绘制的多边形顶点（图片坐标）
         let isDrawing = false;
@@ -518,6 +521,10 @@
             // 保存最后的鼠标位置（用于工具栏缩放以最近鼠标位置为中心）
             lastMouseCanvasX = x;
             lastMouseCanvasY = y;
+            // 同步记录对应的图片坐标，保证后续工具栏缩放使用的中心点跟随图片位置
+            const imgPos = canvasToImageCoords(x, y);
+            lastMouseImageX = imgPos.x;
+            lastMouseImageY = imgPos.y;
 
             if (!isDragging) return;
 
@@ -540,18 +547,32 @@
             isDragging = false;
         });
         
-        // 缩放工具：以给定画布坐标为中心缩放
+        // 缩放工具：以给定画布坐标为中心缩放（使用图片坐标计算，保证同一图片点保持在相同画布位置）
         function zoomAt(canvasX, canvasY, scaleFactor) {
+            if (!currentImage) return;
+
+            // 将画布坐标转换为图片坐标（基于当前变换）
+            const imgPos = canvasToImageCoords(canvasX, canvasY);
+
             const oldScale = scale;
-            scale = Math.max(0.1, Math.min(scale * scaleFactor, 10));
-            // 调整偏移量以实现围绕指定点缩放
-            offsetX = canvasX - (canvasX - offsetX) * (scale / oldScale);
-            offsetY = canvasY - (canvasY - offsetY) * (scale / oldScale);
+            const newScale = Math.max(0.1, Math.min(scale * scaleFactor, 10));
+
+            // 计算在 newScale 下，图片左上角的画布位置
+            const newImageWidth = currentImage.width * newScale;
+            const newImageHeight = currentImage.height * newScale;
+
+            // 直接根据图片坐标和目标画布坐标计算新的 offset，保证图片点 imgPos 在 canvasX,canvasY
+            offsetX = canvasX - ((canvas.width - newImageWidth) / 2) - imgPos.x * newScale;
+            offsetY = canvasY - ((canvas.height - newImageHeight) / 2) - imgPos.y * newScale;
+
+            // 更新 scale
+            scale = newScale;
+
             drawImage();
             updateZoomLevel();
         }
 
-        // 鼠标滚轮事件（缩放），以鼠标位置为中心
+        // 鼠标滚轮事件（缩放），以鼠标位置对应的图片点为中心（先换算成图片坐标，保证缩放中心相对于图片不变）
         function handleWheel(e) {
             e.preventDefault();
 
@@ -559,10 +580,19 @@
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
 
+            // 记录最近的鼠标位置（画布坐标）和对应的图片坐标，供工具按钮等使用
+            lastMouseCanvasX = x;
+            lastMouseCanvasY = y;
+            const imgPos = canvasToImageCoords(x, y);
+            lastMouseImageX = imgPos.x;
+            lastMouseImageY = imgPos.y;
+
             // 更平滑的缩放因子，兼容鼠标滚轮和触控板
             const scaleFactor = Math.exp(-e.deltaY * 0.001);
 
-            zoomAt(x, y, scaleFactor);
+            // 将图片坐标转换回画布坐标（在当前变换下），并以此为缩放中心
+            const center = imageToCanvasCoords(imgPos.x, imgPos.y);
+            zoomAt(center.x, center.y, scaleFactor);
         }
         
         // 键盘按下事件
@@ -576,15 +606,36 @@
         
         // 放大（以最近鼠标位置为中心，如果没有鼠标位置则以画布中心为中心）
         function zoomIn() {
-            const centerX = (typeof lastMouseCanvasX === 'number' && lastMouseCanvasX !== undefined) ? lastMouseCanvasX : canvas.width / 2;
-            const centerY = (typeof lastMouseCanvasY === 'number' && lastMouseCanvasY !== undefined) ? lastMouseCanvasY : canvas.height / 2;
+            let centerX = canvas.width / 2;
+            let centerY = canvas.height / 2;
+
+            // 优先使用最近鼠标对应的图片坐标，确保缩放后的图片依旧以同一图片点为中心
+            if (typeof lastMouseImageX === 'number' && typeof lastMouseImageY === 'number') {
+                const p = imageToCanvasCoords(lastMouseImageX, lastMouseImageY);
+                centerX = p.x;
+                centerY = p.y;
+            } else if (typeof lastMouseCanvasX === 'number' && typeof lastMouseCanvasY === 'number') {
+                centerX = lastMouseCanvasX;
+                centerY = lastMouseCanvasY;
+            }
+
             zoomAt(centerX, centerY, 1.2);
         }
-        
+
         // 缩小（以最近鼠标位置为中心）
         function zoomOut() {
-            const centerX = (typeof lastMouseCanvasX === 'number' && lastMouseCanvasX !== undefined) ? lastMouseCanvasX : canvas.width / 2;
-            const centerY = (typeof lastMouseCanvasY === 'number' && lastMouseCanvasY !== undefined) ? lastMouseCanvasY : canvas.height / 2;
+            let centerX = canvas.width / 2;
+            let centerY = canvas.height / 2;
+
+            if (typeof lastMouseImageX === 'number' && typeof lastMouseImageY === 'number') {
+                const p = imageToCanvasCoords(lastMouseImageX, lastMouseImageY);
+                centerX = p.x;
+                centerY = p.y;
+            } else if (typeof lastMouseCanvasX === 'number' && typeof lastMouseCanvasY === 'number') {
+                centerX = lastMouseCanvasX;
+                centerY = lastMouseCanvasY;
+            }
+
             zoomAt(centerX, centerY, 0.8);
         }
         
