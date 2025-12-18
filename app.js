@@ -5,7 +5,7 @@ const SQLiteManager = require('./SQLiteManager');
 const session = require('express-session');
 const SQLiteStore = require('connect-sqlite3')(session);
 const multer = require('multer');
-const { imageSize } = require('image-size');
+const sizeOf = require('image-size');
 
 // 加载配置文件
 const config = YAML.load(path.join(__dirname, 'config.yml'));
@@ -165,7 +165,7 @@ app.post('/api/admin/images/upload', isAuthenticated, upload.single('image'), as
     }
     
     // 获取图片尺寸信息
-    const dimensions = imageSize(req.file.path);
+    const dimensions = sizeOf.sync(req.file.path);
     
     // 保存图片信息到数据库
     const imageId = await dbManager.insertImage(req.file.filename, dimensions.width, dimensions.height);
