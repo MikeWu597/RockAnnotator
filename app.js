@@ -108,10 +108,7 @@ function isAuthenticated(req, res, next) {
 
 // 路由定义
 app.get('/', (req, res) => {
-  res.json({ 
-    message: 'Welcome to RockAnnotator API',
-    admin_password_set: !!config.admin.password
-  });
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // 管理员登录页面
@@ -372,6 +369,70 @@ app.delete('/api/admin/tasks/:id', isAuthenticated, async (req, res) => {
       message: '任务删除成功'
     });
   } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 获取随机待标注任务的API
+app.get('/api/tasks/random', async (req, res) => {
+  try {
+    // 获取一个随机的待标注任务
+    const task = await dbManager.getRandomPendingTask();
+    
+    if (!task) {
+      return res.json({
+        success: false,
+        error: '没有待标注的任务'
+      });
+    }
+    
+    const imagePath = `/uploads/${task.filename}`;
+    
+    res.json({
+      success: true,
+      data: {
+        task: {
+          id: task.id,
+          status: task.status,
+          createdAt: task.created_at
+        },
+        imagePath: imagePath
+      }
+    });
+  } catch (error) {
+    console.error('Error getting random task:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 保存标注的API
+app.post('/api/annotations/save', async (req, res) => {
+  try {
+    const { taskId, polygons } = req.body;
+    
+    if (!taskId || !polygons) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必要参数'
+      });
+    }
+    
+    // 这里应该保存标注数据到数据库
+    // 当前版本只是简单地更新任务状态为已完成
+    await dbManager.updateTaskStatusToCompleted(taskId);
+    
+    res.json({
+      success: true,
+      message: '标注已保存'
+    });
+  } catch (error) {
+    console.error('Error saving annotation:', error);
     res.status(500).json({
       success: false,
       error: error.message

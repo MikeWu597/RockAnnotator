@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图像标注工具 - RockAnnotator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        
+        #canvas-container {
+            position: relative;
+            width: 100%;
+            height: calc(100vh - 60px);
+            overflow: hidden;
+            background-color: #f0f0f0;
+        }
+        
+        #imageCanvas {
+            position: absolute;
+            cursor: crosshair;
+        }
+        
+        #toolbar {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 5px;
+            padding: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+        }
+        
+        .toolbar-item {
+            margin: 5px 0;
+        }
+        
+        .instructions {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border-radius: 5px;
+            padding: 10px;
+            font-size: 14px;
+        }
+        
+        .status-bar {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border-radius: 5px;
+            padding: 10px;
+            font-size: 14px;
+        }
+        
+        .polygon-point {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background-color: red;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        .polygon-line {
+            position: absolute;
+            height: 2px;
+            background-color: red;
+            transform-origin: 0 0;
+            pointer-events: none;
+            z-index: 9;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="d-flex justify-content-center align-items-center" style="height: 100vh;">
+        <div>
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">加载中...</span>
+            </div>
+            <p class="mt-2">正在加载标注任务...</p>
+        </div>
+    </div>
+    
+    <div id="main-content" style="display: none;">
+        <div id="canvas-container">
+            <canvas id="imageCanvas"></canvas>
+        </div>
+        
+        <div id="toolbar">
+            <div class="toolbar-item">
+                <button id="zoomInBtn" class="btn btn-sm btn-outline-primary" title="放大">
+                    <i class="fas fa-search-plus"></i>
+                </button>
+            </div>
+            <div class="toolbar-item">
+                <button id="zoomOutBtn" class="btn btn-sm btn-outline-primary" title="缩小">
+                    <i class="fas fa-search-minus"></i>
+                </button>
+            </div>
+            <div class="toolbar-item">
+                <button id="resetViewBtn" class="btn btn-sm btn-outline-secondary" title="重置视图">
+                    <i class="fas fa-expand"></i>
+                </button>
+            </div>
+            <div class="toolbar-item">
+                <button id="clearPolygonBtn" class="btn btn-sm btn-outline-warning" title="清除当前多边形">
+                    <i class="fas fa-undo"></i>
+                </button>
+            </div>
+            <div class="toolbar-item">
+                <button id="saveBtn" class="btn btn-sm btn-success" title="保存标注 (或按任意键)">
+                    <i class="fas fa-save"></i> 保存
+                </button>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <strong>使用说明:</strong><br>
+            • 使用鼠标滚轮缩放图片<br>
+            • 点击左键绘制多边形顶点<br>
+            • 首尾相接完成多边形绘制<br>
+            • 按任意键保存标注并加载新图片
+        </div>
+        
+        <div class="status-bar">
+            <div>当前任务ID: <span id="taskId">-</span></div>
+            <div>已绘制多边形: <span id="polygonCount">0</span></div>
+            <div>缩放比例: <span id="zoomLevel">100%</span></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 全局变量
+        let canvas = document.getElementById('imageCanvas');
+        let ctx = canvas.getContext('2d');
+        let currentImage = null;
+        let currentTaskId = null;
+        let scale = 1;
+        let offsetX = 0;
+        let offsetY = 0;
+        let isDragging = false;
+        let lastX = 0;
+        let lastY = 0;
+        let polygons = []; // 存储已完成的多边形
+        let currentPolygon = []; // 存储当前正在绘制的多边形顶点
+        let isDrawing = false;
+        
+        // 页面加载完成后初始化
+        window.addEventListener('load', function() {
+            loadRandomTask();
+            setupEventListeners();
+        });
+        
+        // 加载随机标注任务
+        function loadRandomTask() {
+            fetch('/api/tasks/random')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Received task data:', data);
+                    if (data.success) {
+                        currentTaskId = data.data.task.id;
+                        document.getElementById('taskId').textContent = currentTaskId;
+                        loadImage(data.data.imagePath);
+                        // 不再在这里隐藏加载界面，在图片加载成功后再隐藏
+                    } else {
+                        document.getElementById('loading').innerHTML = `
+                            <div class="text-center">
+                                <i class="fas fa-exclamation-triangle text-warning" style="font-size: 3rem;"></i>
+                                <p class="mt-3">暂无待标注任务</p>
+                                <a href="/admin/login" class="btn btn-primary mt-2">前往管理面板</a>
+                            </div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('loading').innerHTML = `
+                        <div class="text-center text-danger">
+                            <i class="fas fa-exclamation-triangle" style="font-size: 3rem;"></i>
+                            <p class="mt-3">加载任务失败: ${error.message}</p>
+                            <button class="btn btn-primary mt-2" onclick="loadRandomTask()">重试</button>
+                        </div>
+                    `;
+                });
+        }
+        
+        // 加载图片
+        function loadImage(imagePath) {
+            console.log('Loading image with path:', imagePath);
+            
+            // 创建新的图片对象
+            const img = new Image();
+            
+            // 设置跨域属性（如果需要）
+            img.crossOrigin = "anonymous";
+            
+            img.onload = function() {
+                console.log('Image loaded successfully:', img.width, 'x', img.height);
+                currentImage = img;
+                resizeCanvas();
+                drawImage();
+                updateZoomLevel();
+                
+                // 隐藏加载界面并显示主内容
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('main-content').style.display = 'block';
+            };
+            
+            img.onerror = function(event) {
+                console.error('图片加载失败:', imagePath, event);
+                document.getElementById('loading').innerHTML = `
+                    <div class="text-center text-danger">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 3rem;"></i>
+                        <p class="mt-3">图片加载失败: ${imagePath}</p>
+                        <button class="btn btn-primary mt-2" onclick="loadRandomTask()">重试</button>
+                    </div>
+                `;
+            };
+            
+            // 正确处理图片路径
+            // 如果是绝对路径，我们直接使用；如果是相对路径，我们需要适配
+            if (imagePath.startsWith('/')) {
+                // 对于以 / 开头的路径，我们在前面加上 . 来表示相对于当前域的根目录
+                img.src = '.' + imagePath;
+            } else if (imagePath.startsWith('http')) {
+                // 对于完整的URL，直接使用
+                img.src = imagePath;
+            } else {
+                // 对于相对路径，直接使用
+                img.src = imagePath;
+            }
+            
+            console.log('Final image src:', img.src);
+        }
+        
+        // 调整画布大小
+        function resizeCanvas() {
+            const container = document.getElementById('canvas-container');
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            drawImage(); // 重新绘制图像
+        }
+        
+        // 绘制图片
+        function drawImage() {
+            // 检查是否有图片需要绘制
+            if (!currentImage) return;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 计算居中位置
+            const imageWidth = currentImage.width * scale;
+            const imageHeight = currentImage.height * scale;
+            const x = (canvas.width - imageWidth) / 2 + offsetX;
+            const y = (canvas.height - imageHeight) / 2 + offsetY;
+            
+            // 绘制图片
+            ctx.drawImage(currentImage, x, y, imageWidth, imageHeight);
+            
+            // 绘制已完成的多边形
+            drawPolygons();
+            
+            // 绘制当前正在绘制的多边形
+            drawCurrentPolygon();
+        }
+        
+        // 绘制已完成的多边形
+        function drawPolygons() {
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+            
+            polygons.forEach(polygon => {
+                if (polygon.length < 3) return;
+                
+                ctx.beginPath();
+                const firstPoint = canvasToImageCoords(polygon[0].x, polygon[0].y);
+                ctx.moveTo(firstPoint.x, firstPoint.y);
+                
+                for (let i = 1; i < polygon.length; i++) {
+                    const point = canvasToImageCoords(polygon[i].x, polygon[i].y);
+                    ctx.lineTo(point.x, point.y);
+                }
+                
+                ctx.closePath();
+                ctx.stroke();
+                ctx.fill();
+            });
+        }
+        
+        // 绘制当前正在绘制的多边形
+        function drawCurrentPolygon() {
+            if (currentPolygon.length === 0) return;
+            
+            ctx.strokeStyle = 'blue';
+            ctx.lineWidth = 2;
+            ctx.fillStyle = 'rgba(0, 0, 255, 0.3)';
+            
+            // 绘制顶点间的连线
+            if (currentPolygon.length > 1) {
+                ctx.beginPath();
+                const firstPoint = canvasToImageCoords(currentPolygon[0].x, currentPolygon[0].y);
+                ctx.moveTo(firstPoint.x, firstPoint.y);
+                
+                for (let i = 1; i < currentPolygon.length; i++) {
+                    const point = canvasToImageCoords(currentPolygon[i].x, currentPolygon[i].y);
+                    ctx.lineTo(point.x, point.y);
+                }
+                
+                ctx.stroke();
+            }
+            
+            // 绘制顶点
+            currentPolygon.forEach(point => {
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = 'blue';
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            });
+            
+            // 如果至少有3个点，绘制预览填充区域
+            if (currentPolygon.length >= 3) {
+                ctx.beginPath();
+                const firstPoint = canvasToImageCoords(currentPolygon[0].x, currentPolygon[0].y);
+                ctx.moveTo(firstPoint.x, firstPoint.y);
+                
+                for (let i = 1; i < currentPolygon.length; i++) {
+                    const point = canvasToImageCoords(currentPolygon[i].x, currentPolygon[i].y);
+                    ctx.lineTo(point.x, point.y);
+                }
+                
+                // 连接最后一个点到第一个点
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(0, 0, 255, 0.1)';
+                ctx.fill();
+            }
+        }
+        
+        // 设置事件监听器
+        function setupEventListeners() {
+            // 窗口大小改变
+            window.addEventListener('resize', function() {
+                if (currentImage) {
+                    resizeCanvas();
+                }
+            });
+            
+            // 鼠标事件
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            canvas.addEventListener('wheel', handleWheel);
+            
+            // 键盘事件
+            document.addEventListener('keydown', handleKeyDown);
+            
+            // 工具栏按钮事件
+            document.getElementById('zoomInBtn').addEventListener('click', zoomIn);
+            document.getElementById('zoomOutBtn').addEventListener('click', zoomOut);
+            document.getElementById('resetViewBtn').addEventListener('click', resetView);
+            document.getElementById('clearPolygonBtn').addEventListener('click', clearCurrentPolygon);
+            document.getElementById('saveBtn').addEventListener('click', saveAndLoadNew);
+        }
+        
+        // 鼠标按下事件
+        function handleMouseDown(e) {
+            if (e.button !== 0) return; // 只处理左键
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            if (isNearFirstPoint(x, y) && currentPolygon.length >= 3) {
+                // 完成多边形绘制
+                finishPolygon();
+            } else {
+                // 添加新顶点
+                currentPolygon.push({x: x, y: y});
+                drawImage();
+                updatePolygonCount();
+            }
+        }
+        
+        // 鼠标移动事件
+        function handleMouseMove(e) {
+            if (!isDragging) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // 平移图片
+            offsetX += (x - lastX);
+            offsetY += (y - lastY);
+            lastX = x;
+            lastY = y;
+            
+            drawImage();
+        }
+        
+        // 鼠标抬起事件
+        function handleMouseUp(e) {
+            isDragging = false;
+        }
+        
+        // 鼠标滚轮事件（缩放）
+        function handleWheel(e) {
+            e.preventDefault();
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const zoomIntensity = 0.1;
+            const oldScale = scale;
+            
+            if (e.deltaY < 0) {
+                scale *= (1 + zoomIntensity); // 放大
+            } else {
+                scale *= (1 - zoomIntensity); // 缩小
+            }
+            
+            // 限制缩放范围
+            scale = Math.max(0.1, Math.min(scale, 10));
+            
+            // 调整偏移量以实现围绕鼠标位置缩放
+            offsetX = x - (x - offsetX) * (scale / oldScale);
+            offsetY = y - (y - offsetY) * (scale / oldScale);
+            
+            drawImage();
+            updateZoomLevel();
+        }
+        
+        // 键盘按下事件
+        function handleKeyDown(e) {
+            // 忽略修饰键
+            if (e.ctrlKey || e.altKey || e.metaKey) return;
+            
+            // 保存并加载新任务
+            saveAndLoadNew();
+        }
+        
+        // 放大
+        function zoomIn() {
+            const oldScale = scale;
+            scale *= 1.2;
+            scale = Math.min(scale, 10);
+            
+            // 调整偏移量使缩放居中
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            offsetX = centerX - (centerX - offsetX) * (scale / oldScale);
+            offsetY = centerY - (centerY - offsetY) * (scale / oldScale);
+            
+            drawImage();
+            updateZoomLevel();
+        }
+        
+        // 缩小
+        function zoomOut() {
+            const oldScale = scale;
+            scale *= 0.8;
+            scale = Math.max(scale, 0.1);
+            
+            // 调整偏移量使缩放居中
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            offsetX = centerX - (centerX - offsetX) * (scale / oldScale);
+            offsetY = centerY - (centerY - offsetY) * (scale / oldScale);
+            
+            drawImage();
+            updateZoomLevel();
+        }
+        
+        // 重置视图
+        function resetView() {
+            scale = 1;
+            offsetX = 0;
+            offsetY = 0;
+            drawImage();
+            updateZoomLevel();
+        }
+        
+        // 清除当前多边形
+        function clearCurrentPolygon() {
+            currentPolygon = [];
+            drawImage();
+        }
+        
+        // 完成多边形绘制
+        function finishPolygon() {
+            if (currentPolygon.length >= 3) {
+                polygons.push([...currentPolygon]);
+            }
+            currentPolygon = [];
+            drawImage();
+            updatePolygonCount();
+        }
+        
+        // 检查点是否接近第一个点（用于闭合多边形）
+        function isNearFirstPoint(x, y) {
+            if (currentPolygon.length < 3) return false;
+            
+            const firstPoint = currentPolygon[0];
+            const distance = Math.sqrt(Math.pow(x - firstPoint.x, 2) + Math.pow(y - firstPoint.y, 2));
+            return distance < 10; // 10像素内的距离认为是闭合
+        }
+        
+        // 更新多边形计数显示
+        function updatePolygonCount() {
+            document.getElementById('polygonCount').textContent = polygons.length;
+        }
+        
+        // 更新缩放级别显示
+        function updateZoomLevel() {
+            document.getElementById('zoomLevel').textContent = Math.round(scale * 100) + '%';
+        }
+        
+        // 保存标注并加载新任务
+        function saveAndLoadNew() {
+            if (!currentTaskId) return;
+            
+            // 准备注释数据
+            const annotationData = {
+                taskId: currentTaskId,
+                polygons: polygons.map(polygon => 
+                    polygon.map(point => {
+                        const imgCoords = canvasToImageCoords(point.x, point.y);
+                        return {
+                            x: imgCoords.x,
+                            y: imgCoords.y
+                        };
+                    })
+                )
+            };
+            
+            // 发送到服务器保存
+            fetch('/api/annotations/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(annotationData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // 重置状态并加载新任务
+                    polygons = [];
+                    currentPolygon = [];
+                    updatePolygonCount();
+                    loadRandomTask();
+                } else {
+                    alert('保存失败: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('保存失败: ' + error.message);
+            });
+        }
+        
+        // 将画布坐标转换为图片坐标
+        function canvasToImageCoords(canvasX, canvasY) {
+            if (!currentImage) return {x: 0, y: 0};
+            
+            const imageWidth = currentImage.width * scale;
+            const imageHeight = currentImage.height * scale;
+            const imageX = (canvas.width - imageWidth) / 2 + offsetX;
+            const imageY = (canvas.height - imageHeight) / 2 + offsetY;
+            
+            const x = ((canvasX - imageX) / scale);
+            const y = ((canvasY - imageY) / scale);
+            
+            return {x, y};
+        }
+        
+        // 将图片坐标转换为画布坐标
+        function imageToCanvasCoords(imageX, imageY) {
+            if (!currentImage) return {x: 0, y: 0};
+            
+            const imageWidth = currentImage.width * scale;
+            const imageHeight = currentImage.height * scale;
+            const imageXPos = (canvas.width - imageWidth) / 2 + offsetX;
+            const imageYPos = (canvas.height - imageHeight) / 2 + offsetY;
+            
+            const x = imageXPos + (imageX * scale);
+            const y = imageYPos + (imageY * scale);
+            
+            return {x, y};
+        }
+    </script>
+</body>
+</html>

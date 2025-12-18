@@ -306,6 +306,57 @@ class SQLiteManager {
     }
 
     /**
+     * 获取随机待标注任务
+     */
+    getRandomPendingTask() {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                SELECT 
+                    at.id,
+                    at.status,
+                    at.created_at,
+                    i.filename,
+                    i.width,
+                    i.height
+                FROM annotation_tasks at
+                JOIN images i ON at.image_id = i.id
+                WHERE at.status = 'pending'
+                ORDER BY RANDOM()
+                LIMIT 1
+            `;
+            
+            this.db.get(sql, [], (err, row) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(row);
+                }
+            });
+        });
+    }
+
+    /**
+     * 更新任务状态为已完成
+     */
+    updateTaskStatusToCompleted(taskId) {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                UPDATE annotation_tasks 
+                SET status = 'completed', completed_at = datetime('now')
+                WHERE id = ?
+            `;
+            
+            this.db.run(sql, [taskId], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.changes);
+                }
+            });
+        });
+    }
+
+    /**
      * 删除标注任务
      */
     deleteAnnotationTaskById(id) {
