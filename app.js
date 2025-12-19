@@ -201,11 +201,43 @@ app.get('/api/admin/export', isAuthenticated, async (req, res) => {
     if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true });
     if (!fs.existsSync(tmpRootDir)) fs.mkdirSync(tmpRootDir, { recursive: true });
 
+    // 将传入的时间适配为 UTC ISO，兼容客户端发送的本地时间（无时区）或带时区的 ISO
+    function parseToUTCISO(input) {
+      if (!input) return null;
+      // 如果包含时区信息（Z 或 ±hh:mm），直接使用 Date 解析为 UTC
+      if (/Z|[+-]\d{2}:?\d{2}$/.test(input)) {
+        const d = new Date(input);
+        if (isNaN(d)) return null;
+        return d.toISOString();
+      }
+
+      // 否则按东八区（UTC+8）解释输入的本地时间（格式 YYYY-MM-DDTHH:mm 或类似），转换为 UTC
+      // 解析数字组件
+      const m = input.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+      if (!m) {
+        // 回退到 Date 解析
+        const d2 = new Date(input);
+        if (isNaN(d2)) return null;
+        return d2.toISOString();
+      }
+      const y = parseInt(m[1], 10);
+      const mo = parseInt(m[2], 10);
+      const da = parseInt(m[3], 10);
+      const hh = parseInt(m[4], 10);
+      const mi = parseInt(m[5], 10);
+      // 本地（东八） -> UTC = local - 8h
+      const utcMillis = Date.UTC(y, mo - 1, da, hh, mi) - (8 * 60 * 60 * 1000);
+      return new Date(utcMillis).toISOString();
+    }
+
+    const startISO = parseToUTCISO(start);
+    const endISO = parseToUTCISO(end);
     const onlyUnexported = req.query.onlyUnexported === '1' || req.query.onlyUnexported === 'true';
+
     const zipAbsPath = await exportDrSong({
       dbManager,
-      startISO: start,
-      endISO: end,
+      startISO: startISO,
+      endISO: endISO,
       uploadsDir,
       downloadsDir,
       tmpRootDir,

@@ -63,14 +63,14 @@ class SQLiteManager {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE NOT NULL,
                     email TEXT UNIQUE NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    created_at DATETIME DEFAULT (datetime('now','localtime'))
                 );
                 
                 CREATE TABLE IF NOT EXISTS annotations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER,
                     content TEXT NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    created_at DATETIME DEFAULT (datetime('now','localtime')),
                     FOREIGN KEY (user_id) REFERENCES users (id)
                 );
                 
@@ -79,7 +79,7 @@ class SQLiteManager {
                     filename TEXT NOT NULL,
                     width INTEGER NOT NULL,
                     height INTEGER NOT NULL,
-                    upload_time DATETIME DEFAULT CURRENT_TIMESTAMP
+                    upload_time DATETIME DEFAULT (datetime('now','localtime'))
                 );
                 
                 CREATE TABLE IF NOT EXISTS annotation_tasks (
@@ -87,7 +87,7 @@ class SQLiteManager {
                     image_id INTEGER NOT NULL,
                     status TEXT DEFAULT 'pending',
                     exported INTEGER DEFAULT 0,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    created_at DATETIME DEFAULT (datetime('now','localtime')),
                     completed_at DATETIME NULL,
                     FOREIGN KEY (image_id) REFERENCES images (id)
                 );
@@ -95,7 +95,7 @@ class SQLiteManager {
                 CREATE TABLE IF NOT EXISTS tags (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT UNIQUE NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    created_at DATETIME DEFAULT (datetime('now','localtime'))
                 );
             `;
 
@@ -148,7 +148,7 @@ class SQLiteManager {
      */
     insertAnnotation(userId, content) {
         return new Promise((resolve, reject) => {
-            const sql = 'INSERT INTO annotations (user_id, content) VALUES (?, ?)';
+            const sql = "INSERT INTO annotations (user_id, content, created_at) VALUES (?, ?, datetime('now','localtime'))";
             this.db.run(sql, [userId, content], function(err) {
                 if (err) {
                     reject(err);
@@ -244,7 +244,7 @@ class SQLiteManager {
      */
     insertImage(filename, width, height) {
         return new Promise((resolve, reject) => {
-            const sql = 'INSERT INTO images (filename, width, height) VALUES (?, ?, ?)';
+            const sql = "INSERT INTO images (filename, width, height, upload_time) VALUES (?, ?, ?, datetime('now','localtime'))";
             this.db.run(sql, [filename, width, height], function(err) {
                 if (err) {
                     reject(err);
@@ -292,7 +292,7 @@ class SQLiteManager {
      */
     createAnnotationTask(imageId) {
         return new Promise((resolve, reject) => {
-            const sql = 'INSERT INTO annotation_tasks (image_id) VALUES (?)';
+            const sql = "INSERT INTO annotation_tasks (image_id, created_at) VALUES (?, datetime('now','localtime'))";
             this.db.run(sql, [imageId], function(err) {
                 if (err) {
                     reject(err);
@@ -527,7 +527,7 @@ class SQLiteManager {
         return new Promise((resolve, reject) => {
             const sql = `
                 UPDATE annotation_tasks 
-                SET status = 'completed', completed_at = datetime('now')
+                SET status = 'completed', completed_at = datetime('now','localtime')
                 WHERE id = ?
             `;
             
