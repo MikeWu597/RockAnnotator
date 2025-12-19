@@ -539,8 +539,9 @@ app.get('/api/admin/tasks', isAuthenticated, async (req, res) => {
     const pageSize = parseInt(req.query.pageSize) || 10;
     const status = req.query.status || null;
     
-    const tasks = await dbManager.getAnnotationTasks(page, pageSize, status);
-    const total = await dbManager.getAnnotationTasksCount(status);
+    const filename = req.query.filename || null;
+    const tasks = await dbManager.getAnnotationTasks(page, pageSize, status, filename);
+    const total = await dbManager.getAnnotationTasksCount(status, filename);
     
     res.json({
       success: true,

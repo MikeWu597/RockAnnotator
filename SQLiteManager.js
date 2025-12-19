@@ -505,10 +505,10 @@ class SQLiteManager {
     /**
      * 获取标注任务列表（带分页）
      */
-    getAnnotationTasks(page = 1, pageSize = 10, status = null) {
+    getAnnotationTasks(page = 1, pageSize = 10, status = null, filename = null) {
         return new Promise((resolve, reject) => {
             const offset = (page - 1) * pageSize;
-            
+
             let sql = `
                 SELECT 
                     at.id,
@@ -522,18 +522,27 @@ class SQLiteManager {
                 FROM annotation_tasks at
                 JOIN images i ON at.image_id = i.id
             `;
-            
+
+            const clauses = [];
             const params = [];
-            
+
             if (status) {
-                sql += ' WHERE at.status = ?';
+                clauses.push('at.status = ?');
                 params.push(status);
             }
-            
+
+            if (filename) {
+                // 模糊匹配文件名（大小写不敏感）
+                clauses.push("lower(i.filename) LIKE '%' || lower(?) || '%'");
+                params.push(filename);
+            }
+
+            if (clauses.length > 0) sql += ' WHERE ' + clauses.join(' AND ');
+
             // 默认按ID降序排序
             sql += ' ORDER BY at.id DESC LIMIT ? OFFSET ?';
             params.push(pageSize, offset);
-            
+
             this.db.all(sql, params, (err, rows) => {
                 if (err) {
                     reject(err);
@@ -547,21 +556,29 @@ class SQLiteManager {
     /**
      * 获取标注任务总数
      */
-    getAnnotationTasksCount(status = null) {
+    getAnnotationTasksCount(status = null, filename = null) {
         return new Promise((resolve, reject) => {
-            let sql = 'SELECT COUNT(*) as count FROM annotation_tasks';
+            let sql = 'SELECT COUNT(*) as count FROM annotation_tasks at JOIN images i ON at.image_id = i.id';
+            const clauses = [];
             const params = [];
-            
+
             if (status) {
-                sql += ' WHERE status = ?';
+                clauses.push('at.status = ?');
                 params.push(status);
             }
-            
+
+            if (filename) {
+                clauses.push("lower(i.filename) LIKE '%' || lower(?) || '%'");
+                params.push(filename);
+            }
+
+            if (clauses.length > 0) sql += ' WHERE ' + clauses.join(' AND ');
+
             this.db.get(sql, params, (err, row) => {
                 if (err) {
                     reject(err);
                 } else {
-                    resolve(row.count);
+                    resolve(row ? row.count : 0);
                 }
             });
         });

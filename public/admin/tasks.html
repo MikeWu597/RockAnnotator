@@ -50,9 +50,14 @@
                                 </select>
                             </div>
                             <div class="col-md-3">
+                                <label for="filenameSearch" class="form-label">按文件名模糊查询</label>
+                                <div class="input-group mb-2">
+                                    <input id="filenameSearch" class="form-control" placeholder="输入文件名（支持模糊）" />
+                                    <button id="filenameSearchBtn" class="btn btn-outline-secondary">查找</button>
+                                </div>
                                 <label for="taskIdSearch" class="form-label">按任务ID查询</label>
                                 <div class="input-group">
-                                    <input id="taskIdSearch" class="form-control" placeholder="输入任务ID并回车或点查找" />
+                                    <input id="taskIdSearch" class="form-control" placeholder="任务ID" />
                                     <button id="taskIdSearchBtn" class="btn btn-outline-secondary">查找</button>
                                 </div>
                             </div>
@@ -204,6 +209,26 @@
             document.getElementById('refreshBtn').addEventListener('click', function() {
                 loadTasks(currentPage);
             });
+
+            // 文件名模糊查询
+            const filenameInput = document.getElementById('filenameSearch');
+            const filenameBtn = document.getElementById('filenameSearchBtn');
+            if (filenameInput) {
+                filenameInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') { currentPage = 1; loadTasks(); }
+                });
+            }
+            if (filenameBtn) filenameBtn.addEventListener('click', function() { currentPage = 1; loadTasks(); });
+
+            // 任务ID快捷查询
+            const taskIdInput = document.getElementById('taskIdSearch');
+            const taskIdBtn = document.getElementById('taskIdSearchBtn');
+            if (taskIdInput) {
+                taskIdInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') { const v = taskIdInput.value.trim(); if (v) { loadTasksById(v); } }
+                });
+            }
+            if (taskIdBtn) taskIdBtn.addEventListener('click', function() { const v = taskIdInput.value.trim(); if (v) loadTasksById(v); });
             
             // 设置默认每页显示数量
             document.getElementById('pageSize').value = currentPageSize;
@@ -233,9 +258,9 @@
             const params = new URLSearchParams();
             params.append('page', currentPage);
             params.append('pageSize', currentPageSize);
-            if (currentStatus) {
-                params.append('status', currentStatus);
-            }
+            if (currentStatus) params.append('status', currentStatus);
+            const filename = (document.getElementById('filenameSearch') && document.getElementById('filenameSearch').value) ? document.getElementById('filenameSearch').value.trim() : null;
+            if (filename) params.append('filename', filename);
             
             // 发起API请求
             fetch(`/api/admin/tasks?${params.toString()}`)
@@ -251,6 +276,22 @@
                     console.error('Error:', error);
                     showError('网络错误，请稍后重试');
                 });
+        }
+
+        // 通过任务ID直接跳转并加载该任务（会调整到包含该任务的页）
+        async function loadTasksById(taskId) {
+            try {
+                // 请求单个任务以确认存在
+                const resp = await fetch(`/api/admin/tasks/${encodeURIComponent(taskId)}`);
+                const j = await resp.json();
+                if (!j || !j.success) { alert('未找到该任务'); return; }
+
+                // 计算该任务在按当前过滤条件下的页码：简单方式是重新加载第一页并让管理员手动查找；为简洁起见，直接弹出详情
+                showTaskDetail(taskId);
+            } catch (e) {
+                console.error('查找任务失败', e);
+                alert('查找任务失败');
+            }
         }
         
         // 渲染任务列表
@@ -415,11 +456,23 @@
         // 显示任务详情
         function showTaskDetail(taskId) {
             currentTaskId = taskId;
-            
-            // 显示模态框
-            const modal = new bootstrap.Modal(document.getElementById('taskDetailModal'));
+            // 清除可能残留的多余 backdrop，保留一个（保证至少有一层背景）
+            const backdrops = Array.from(document.querySelectorAll('.modal-backdrop'));
+            if (backdrops.length > 1) {
+                // 移除从第二个开始的多余 backdrop
+                backdrops.slice(1).forEach(e => e.remove());
+            }
+            // 如果没有 backdrop，Bootstrap 会在 show() 时创建一个；如果存在一个但 body 未标记 modal-open，则确保 class 存在
+            if (backdrops.length === 1 && !document.body.classList.contains('modal-open')) {
+                document.body.classList.add('modal-open');
+            }
+
+            // 显示模态框（复用已有实例以避免重复 backdrop）
+            const modalEl = document.getElementById('taskDetailModal');
+            const existing = bootstrap.Modal.getInstance(modalEl);
+            const modal = existing || new bootstrap.Modal(modalEl);
             const modalBody = document.getElementById('taskDetailBody');
-            
+
             // 显示加载状态
             modalBody.innerHTML = `
                 <div class="text-center">
@@ -428,7 +481,7 @@
                     </div>
                 </div>
             `;
-            
+
             modal.show();
             
             // 请求任务详情
