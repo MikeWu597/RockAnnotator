@@ -235,6 +235,12 @@
                 parent.appendChild(deleteMatchBtn);
                 parent.appendChild(resetMatchBtn);
                 parent.appendChild(unexportMatchBtn);
+                // 导出匹配任务按钮
+                const exportMatchBtn = document.createElement('button');
+                exportMatchBtn.id = 'exportMatchingBtn';
+                exportMatchBtn.className = 'btn btn-success mt-3 w-100 d-none';
+                exportMatchBtn.innerHTML = '<i class="fas fa-file-export me-1"></i> 导出匹配任务';
+                parent.appendChild(exportMatchBtn);
             }
 
             function updateBatchButtonsVisibility() {
@@ -244,6 +250,8 @@
                 [deleteMatchBtn, resetMatchBtn, unexportMatchBtn].forEach(btn => {
                     if (shouldShow) btn.classList.remove('d-none'); else btn.classList.add('d-none');
                 });
+                const exportBtn = document.getElementById('exportMatchingBtn');
+                if (exportBtn) { if (shouldShow) exportBtn.classList.remove('d-none'); else exportBtn.classList.add('d-none'); }
             }
 
             // 绑定过滤项变化以更新按钮显示
@@ -319,6 +327,9 @@
             
             // 初始加载任务列表
             loadTasks();
+            // 绑定导出按钮事件（函数在下方声明）
+            const expBtn = document.getElementById('exportMatchingBtn');
+            if (expBtn) expBtn.addEventListener('click', exportMatchingTasks);
         });
         
         // 加载任务列表
@@ -360,6 +371,38 @@
                     console.error('Error:', error);
                     showError('网络错误，请稍后重试');
                 });
+        }
+
+        // 导出匹配任务的前端处理
+        async function exportMatchingTasks() {
+            const status = document.getElementById('statusFilter').value || '';
+            const filename = (document.getElementById('filenameSearch') && document.getElementById('filenameSearch').value) ? document.getElementById('filenameSearch').value.trim() : '';
+            const params = new URLSearchParams();
+            if (status) params.append('status', status);
+            if (filename) params.append('filename', filename);
+            try {
+                const resp = await fetch(`/api/admin/tasks/export-matching?${params.toString()}`);
+                if (!resp.ok) {
+                    const j = await resp.json().catch(()=>null);
+                    return alert('导出失败: ' + (j && j.error ? j.error : resp.statusText));
+                }
+                const blob = await resp.blob();
+                const cd = resp.headers.get('Content-Disposition') || '';
+                let fname = 'tasks_matching_export.csv';
+                const m = cd.match(/filename\s*=\s*"?([^";]+)"?/i);
+                if (m) fname = m[1];
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fname;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                console.error(e);
+                alert('网络错误，导出失败');
+            }
         }
 
         // 通过任务ID直接跳转并加载该任务（会调整到包含该任务的页）

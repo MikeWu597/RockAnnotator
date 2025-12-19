@@ -662,6 +662,81 @@ app.get('/api/admin/tasks', isAuthenticated, async (req, res) => {
 // 管理员：根据筛选条件获取所有匹配任务的 id（不分页，用于导出选择）
 // (已移至 /api/admin/tasks 路由之后，避免被 /:id 劫持)
 
+// 管理员：导出匹配的任务为 CSV（包含标注员 id 与 username）
+app.get('/api/admin/tasks/export-matching', isAuthenticated, async (req, res) => {
+  try {
+    const status = req.query.status || null;
+    const filename = req.query.filename || null;
+    const ids = await dbManager.getAnnotationTaskIds(status, filename);
+    if (!ids || ids.length === 0) {
+      const emptyCsv = 'task_id,filename,width,height,status,exported,created_at,completed_at,annotator_id,annotator_username,annotation_content\r\n';
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="tasks_matching_export.csv"`);
+      return res.send(emptyCsv);
+    }
+
+    const rows = [];
+    const escapeCell = (s) => {
+      if (s === null || s === undefined) return '';
+      const str = String(s);
+      return '"' + str.replace(/"/g, '""') + '"';
+    };
+    rows.push(['task_id','filename','width','height','status','exported','created_at','completed_at','annotator_id','annotator_username','annotation_content'].map(escapeCell).join(','));
+
+    for (const id of ids) {
+      try {
+        const task = await dbManager.getAnnotationTaskById(id);
+        if (!task) continue;
+
+        // 尝试获取与任务相关的注释并解析出 annotator id
+        let annotatorId = '';
+        let annotatorUsername = '';
+        let annotationContent = '';
+        try {
+          const anns = await dbManager.getAnnotationsByTaskId(id).catch(()=>[]);
+          if (anns && anns.length > 0) {
+            const last = anns[anns.length - 1];
+            annotationContent = JSON.stringify(last);
+            if (last && typeof last === 'object') {
+              annotatorId = last.annotatorId || last.annotator_id || last.user_id || last.userId || '';
+            }
+          }
+          if (annotatorId) {
+            const annot = await dbManager.getAnnotatorById(parseInt(annotatorId)).catch(()=>null);
+            if (annot && annot.username) annotatorUsername = annot.username;
+          }
+        } catch (e) {
+          // ignore per-task parsing errors
+        }
+
+        rows.push([
+          task.id || '',
+          task.filename || '',
+          task.width || '',
+          task.height || '',
+          task.status || '',
+          task.exported != null ? task.exported : '',
+          task.created_at || '',
+          task.completed_at || '',
+          annotatorId || '',
+          annotatorUsername || '',
+          annotationContent || ''
+        ].map(escapeCell).join(','));
+      } catch (e) {
+        console.warn('Failed to process task for export', id, e && e.message ? e.message : e);
+      }
+    }
+
+    const csv = rows.join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="tasks_matching_export.csv"`);
+    res.send(csv);
+  } catch (err) {
+    console.error('Error exporting matching tasks:', err);
+    res.status(500).json({ success: false, error: err.message || '导出失败' });
+  }
+});
+
 // 获取单个标注任务详情的API
 app.get('/api/admin/tasks/:id', isAuthenticated, async (req, res) => {
   try {
@@ -842,6 +917,9 @@ app.post('/api/admin/tasks/unexport-matching', isAuthenticated, async (req, res)
     res.status(500).json({ success: false, error: err.message || '重置导出失败' });
   }
 });
+
+// 管理员：导出匹配的任务为 CSV（包含标注员 id 与 username）
+// (route moved earlier to avoid :id collision)
 
 // 管理员：重置任务（删除标注信息并重置为 pending）
 app.post('/api/admin/tasks/:id/reset', isAuthenticated, async (req, res) => {
