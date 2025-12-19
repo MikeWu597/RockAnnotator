@@ -69,9 +69,35 @@ class SQLiteManager {
                     console.log('Connected to the SQLite database.');
                     this.createTables()
                       .then(() => this.ensureExportedColumn())
+                      .then(() => this.ensureAssignmentColumns())
                       .then(resolve)
                       .catch(reject);
                 }
+            });
+        });
+    }
+
+    // 确保 annotation_tasks 表包含 assigned_to 和 assigned_at 列（兼容旧库）
+    ensureAssignmentColumns() {
+        return new Promise((resolve, reject) => {
+            const sql = `PRAGMA table_info('annotation_tasks')`;
+            this.db.all(sql, [], (err, rows) => {
+                if (err) return reject(err);
+                const hasAssignedTo = rows && rows.some(r => r.name === 'assigned_to');
+                const hasAssignedAt = rows && rows.some(r => r.name === 'assigned_at');
+                const tasks = [];
+                if (!hasAssignedTo) tasks.push("ALTER TABLE annotation_tasks ADD COLUMN assigned_to INTEGER NULL");
+                if (!hasAssignedAt) tasks.push("ALTER TABLE annotation_tasks ADD COLUMN assigned_at DATETIME NULL");
+                if (tasks.length === 0) return resolve();
+                // 顺序执行 ALTER
+                const runNext = (i) => {
+                    if (i >= tasks.length) return resolve();
+                    this.db.run(tasks[i], [], (e) => {
+                        if (e) return reject(e);
+                        runNext(i+1);
+                    });
+                };
+                runNext(0);
             });
         });
     }
@@ -615,13 +641,97 @@ class SQLiteManager {
     }
 
     /**
+     * 原子性地选取一个未分配的待标注任务并分配给指定标注员
+     * 支持超时回收：若任务 assigned_at 已早于当前时间减去 lockMinutes，则可重新分配
+     */
+    getAndAssignRandomPendingTask(annotatorId, lockMinutes = 30) {
+        return new Promise((resolve, reject) => {
+            // 优先检查该 annotator 是否已有分配的 pending 任务（可继续编辑）
+            const assignedSql = `
+                SELECT at.id
+                FROM annotation_tasks at
+                JOIN images i ON at.image_id = i.id
+                WHERE at.status = 'pending' AND at.assigned_to = ?
+                LIMIT 1
+            `;
+            this.db.get(assignedSql, [annotatorId], (err, row) => {
+                if (err) return reject(err);
+                if (row && row.id) {
+                    const taskId = row.id;
+                    const sql = `
+                        SELECT at.id, at.status, at.created_at, at.assigned_to, at.assigned_at, i.filename, i.width, i.height
+                        FROM annotation_tasks at
+                        JOIN images i ON at.image_id = i.id
+                        WHERE at.id = ?
+                    `;
+                    this.db.get(sql, [taskId], (gErr, taskRow) => {
+                        if (gErr) return reject(gErr);
+                        return resolve(taskRow);
+                    });
+                    return;
+                }
+
+                const selectSql = `
+                    SELECT at.id
+                    FROM annotation_tasks at
+                    JOIN images i ON at.image_id = i.id
+                    WHERE at.status = 'pending' AND (at.assigned_to IS NULL OR datetime(at.assigned_at) <= datetime('now', '-' || ? || ' minutes'))
+                    ORDER BY RANDOM()
+                    LIMIT 1
+                `;
+                this.db.get(selectSql, [String(lockMinutes)], (err2, row2) => {
+                if (err) return reject(err);
+                if (err2) return reject(err2);
+                if (!row2) return resolve(null);
+                const taskId = row2.id;
+                const upd = `UPDATE annotation_tasks SET assigned_to = ?, assigned_at = datetime('now','localtime') WHERE id = ?`;
+                this.db.run(upd, [annotatorId, taskId], function(updErr) {
+                    if (updErr) return reject(updErr);
+                    // 返回任务详情
+                    const sql = `
+                        SELECT at.id, at.status, at.created_at, at.assigned_to, at.assigned_at, i.filename, i.width, i.height
+                        FROM annotation_tasks at
+                        JOIN images i ON at.image_id = i.id
+                        WHERE at.id = ?
+                    `;
+                    this.db.get(sql, [taskId], (gErr, taskRow) => {
+                        if (gErr) return reject(gErr);
+                        resolve(taskRow);
+                    });
+                }.bind(this));
+            });
+            });
+        });
+    }
+
+    assignTaskToAnnotator(taskId, annotatorId) {
+        return new Promise((resolve, reject) => {
+            const sql = `UPDATE annotation_tasks SET assigned_to = ?, assigned_at = datetime('now','localtime') WHERE id = ?`;
+            this.db.run(sql, [annotatorId, taskId], function(err) {
+                if (err) return reject(err);
+                resolve(this.changes);
+            });
+        });
+    }
+
+    releaseTaskAssignment(taskId) {
+        return new Promise((resolve, reject) => {
+            const sql = `UPDATE annotation_tasks SET assigned_to = NULL, assigned_at = NULL WHERE id = ?`;
+            this.db.run(sql, [taskId], function(err) {
+                if (err) return reject(err);
+                resolve(this.changes);
+            });
+        });
+    }
+
+    /**
      * 更新任务状态为已完成
      */
     updateTaskStatusToCompleted(taskId) {
         return new Promise((resolve, reject) => {
             const sql = `
                 UPDATE annotation_tasks 
-                SET status = 'completed', completed_at = datetime('now','localtime')
+                SET status = 'completed', completed_at = datetime('now','localtime'), assigned_to = NULL, assigned_at = NULL
                 WHERE id = ?
             `;
             

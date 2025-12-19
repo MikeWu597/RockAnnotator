@@ -126,6 +126,12 @@
                     <i class="fas fa-save"></i> 保存
                 </button>
             </div>
+            <div class="toolbar-item">
+                <div id="annotatorName" style="font-size:12px;color:#333;max-width:160px;word-break:break-all;"></div>
+            </div>
+            <div class="toolbar-item">
+                <div id="annotatorThumbs" style="display:flex;flex-direction:column;gap:6px;overflow-y:auto;max-height:320px;width:84px;padding-top:6px;"></div>
+            </div>
         </div>
         
         <div class="instructions">
@@ -182,10 +188,15 @@
                         window.location.href = '/annotator/login';
                         return;
                     }
-                    // 已登录，继续初始化
+                    // 已登录，继续初始化：先绑定事件，再加载缩略图栏，启动缩略图自动刷新，最后加载任务
                     try {
-                        loadRandomTask();
                         setupEventListeners();
+                        // 显示标注员用户名（如果有）
+                        const an = document.getElementById('annotatorName');
+                        if (an && j.data && j.data.username) an.textContent = j.data.username;
+                        loadAnnotatorThumbnails();
+                        startThumbnailsAutoRefresh();
+                        loadRandomTask();
                     } catch (e) {
                         showError('初始化应用程序时发生错误: ' + e.message);
                     }
@@ -218,7 +229,6 @@
                                 <div class="text-center">
                                     <i class="fas fa-exclamation-triangle text-warning" style="font-size: 3rem;"></i>
                                     <p class="mt-3">暂无待标注任务</p>
-                                    <a href="/admin/login" class="btn btn-primary mt-2">前往管理面板</a>
                                 </div>
                             `);
                         }
@@ -236,6 +246,86 @@
             } catch (e) {
                 showError('加载任务时发生错误: ' + e.message);
             }
+        }
+
+        // 加载并渲染当前标注员已标注的缩略图（点击可跳回编辑）
+        async function loadAnnotatorThumbnails() {
+            try {
+                // 只取最新 5 条
+                const resp = await fetch('/api/annotator/annotations?page=1&pageSize=5');
+                const j = await resp.json().catch(()=>null);
+                const container = document.getElementById('annotatorThumbs');
+                if (!container) return;
+                container.innerHTML = '';
+                if (!resp.ok || !j || !j.success) return;
+                const list = (j.data && j.data.annotations) || [];
+                list.forEach(item => {
+                    if (!item || !item.filename) return;
+                    const wrapper = document.createElement('div');
+                    wrapper.style.display = 'flex';
+                    wrapper.style.flexDirection = 'column';
+                    wrapper.style.alignItems = 'center';
+                    wrapper.style.cursor = 'pointer';
+
+                    const img = document.createElement('img');
+                    img.src = '/uploads/' + encodeURI(item.filename);
+                    img.style.width = '72px';
+                    img.style.height = '72px';
+                    img.style.objectFit = 'cover';
+                    img.style.border = '1px solid rgba(0,0,0,0.08)';
+                    img.alt = `任务 ${item.taskId}`;
+
+                    const time = document.createElement('small');
+                    time.style.fontSize = '10px';
+                    time.style.color = '#666';
+                    time.textContent = new Date(item.created_at).toLocaleTimeString();
+
+                    wrapper.addEventListener('click', function(){ if (item.taskId) loadTaskForEditing(item.taskId); });
+                    wrapper.appendChild(img);
+                    wrapper.appendChild(time);
+                    container.appendChild(wrapper);
+                });
+            } catch (e) { console.error('加载缩略图失败', e); }
+        }
+
+        // 跳回指定任务进行编辑：加载图片并应用最后一次标注的多边形
+        async function loadTaskForEditing(taskId) {
+            if (!taskId) return alert('无效的任务ID');
+            try {
+                const resp = await fetch(`/api/tasks/${taskId}`);
+                const j = await resp.json().catch(()=>null);
+                if (!resp.ok || !j || !j.success) { alert('无法加载任务：' + (j && j.error ? j.error : '未知错误')); return; }
+                const data = j.data || {};
+                const imagePath = data.imagePath;
+                const annotations = data.annotations || [];
+                currentTaskId = taskId;
+                document.getElementById('taskId').textContent = currentTaskId;
+                // 取最后一条标注的 polygons
+                let newPolygons = [];
+                if (annotations && annotations.length > 0) {
+                    const last = annotations[annotations.length - 1];
+                    if (last && last.polygons) newPolygons = last.polygons;
+                }
+                currentPolygon = [];
+                // loadImage returns a promise
+                await loadImage(imagePath);
+                polygons = Array.isArray(newPolygons) ? newPolygons : [];
+                drawImage();
+                updatePolygonCount();
+            } catch (e) {
+                console.error('跳转编辑任务失败', e);
+                alert('跳转编辑任务失败: ' + (e.message || e));
+            }
+        }
+
+        // 实时刷新缩略图（每 8 秒）
+        let _thumbsInterval = null;
+        function startThumbnailsAutoRefresh() {
+            if (_thumbsInterval) return;
+            _thumbsInterval = setInterval(() => { loadAnnotatorThumbnails(); }, 8000);
+        }
+        function stopThumbnailsAutoRefresh() {
+            if (_thumbsInterval) { clearInterval(_thumbsInterval); _thumbsInterval = null; }
         }
         
         // 隐藏加载界面并显示消息
@@ -325,6 +415,9 @@
                             // 将焦点聚到 canvas，防止被其他元素遮挡
                             canvas.scrollIntoView({behavior: 'auto', block: 'center'});
                         }, 50);
+
+                        // resolve promise if caller awaited loadImage
+                        try { if (typeof _loadImageResolve === 'function') _loadImageResolve(); } catch(_) {}
                     } catch (e) {
                         showError('绘制图片时发生错误: ' + e.message);
                     }
@@ -354,6 +447,18 @@
                     resolvedSrc = encodeURI(imagePath);
                 }
                 img.src = resolvedSrc;
+                // 返回一个 promise，允许调用者等待图片加载完成
+                return new Promise((resolve, reject) => {
+                    // 临时挂载 resolve，用于 onload 回调触发
+                    window._loadImageResolve = () => { window._loadImageResolve = null; resolve(); };
+                    // onerror 时清理并 reject
+                    const prevOnError = img.onerror;
+                    img.onerror = function(ev) {
+                        try { window._loadImageResolve = null; } catch(_) {}
+                        prevOnError && prevOnError(ev);
+                        reject(new Error('图片加载失败'));
+                    };
+                });
                 console.log('Final image src:', img.src, 'img.complete:', img.complete);
                 // 调试：如果若干秒后还未加载，输出警告便于定位
                 setTimeout(() => {
@@ -863,12 +968,13 @@
             .then(data => {
                 console.log('Save response data:', data);
                 
-                if (data.success) {
+                    if (data.success) {
                     console.log('Annotation saved successfully');
-                    // 重置状态并加载新任务
+                    // 重置状态并加载新任务（先刷新缩略图以立即反映刚保存的标注）
                     polygons = [];
                     currentPolygon = [];
                     updatePolygonCount();
+                    try { loadAnnotatorThumbnails(); } catch(_) {}
                     loadRandomTask();
                 } else {
                     console.error('Save failed:', data.error);

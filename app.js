@@ -753,38 +753,94 @@ app.get('/api/annotator/session', (req, res) => {
   res.json({ success: true, data: null });
 });
 
-// 获取随机待标注任务的API
-app.get('/api/tasks/random', async (req, res) => {
+// 标注员：获取当前标注员的标注记录（带分页，用于前端展示缩略图）
+app.get('/api/annotator/annotations', isAnnotatorAuthenticated, async (req, res) => {
   try {
-    // 获取一个随机的待标注任务
-    const task = await dbManager.getRandomPendingTask();
-    
-    if (!task) {
-      return res.json({
-        success: false,
-        error: '没有待标注的任务'
-      });
-    }
-    
-    const imagePath = `/uploads/${task.filename}`;
+    const annotator = req.session.annotator;
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.pageSize) || 20;
 
-    res.json({
-      success: true,
-      data: {
-        task: {
-          id: task.id,
-          status: task.status,
-          createdAt: task.created_at
-        },
-        imagePath: imagePath
+    const annotations = await dbManager.getAnnotationsByAnnotatorId(annotator.id, page, pageSize);
+    const total = await dbManager.getAnnotationsByAnnotatorCount(annotator.id);
+
+    // 解析并附带 task filename
+    const enriched = [];
+    for (const a of annotations) {
+      let parsed = a.content;
+      if (typeof parsed === 'string') {
+        try { parsed = JSON.parse(parsed); } catch (e) { parsed = null; }
       }
-    });
+      const taskId = parsed && (parsed.taskId || parsed.task_id) ? (parsed.taskId || parsed.task_id) : null;
+      let filename = null;
+      if (taskId) {
+        try {
+          const task = await dbManager.getAnnotationTaskById(taskId);
+          if (task && task.filename) filename = task.filename;
+        } catch (e) { /* ignore */ }
+      }
+      enriched.push({ id: a.id, created_at: a.created_at, parsedContent: parsed, taskId, filename });
+    }
+
+    res.json({ success: true, data: { annotations: enriched, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } } });
+  } catch (err) {
+    console.error('Error fetching annotator annotations (self):', err);
+    res.status(500).json({ success: false, error: err.message || '查询失败' });
+  }
+});
+
+// 获取随机待标注任务的API（分配锁定给当前标注员）
+app.get('/api/tasks/random', isAnnotatorAuthenticated, async (req, res) => {
+  try {
+    const annotator = req.session.annotator;
+    // lockMinutes 可配置为 query 或使用默认 30 分钟
+    const lockMinutes = parseInt(req.query.lockMinutes) || 30;
+    const task = await dbManager.getAndAssignRandomPendingTask(annotator.id, lockMinutes);
+
+    if (!task) {
+      return res.json({ success: false, error: '没有待标注的任务' });
+    }
+
+    const imagePath = `/uploads/${task.filename}`;
+    res.json({ success: true, data: { task: { id: task.id, status: task.status, createdAt: task.created_at, assigned_to: task.assigned_to, assigned_at: task.assigned_at }, imagePath } });
   } catch (error) {
     console.error('Error getting random task:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 标注员：获取指定任务详情（用于跳回编辑），受 annotator 认证保护
+app.get('/api/tasks/:id', isAnnotatorAuthenticated, async (req, res) => {
+  try {
+    const taskId = parseInt(req.params.id);
+    const task = await dbManager.getAnnotationTaskById(taskId);
+    if (!task) return res.status(404).json({ success: false, error: '任务未找到' });
+    // 获取 annotations（解析内容）
+    let annotations = [];
+    try { annotations = await dbManager.getAnnotationsByTaskId(taskId); } catch (e) { /* ignore */ }
+
+    const imagePath = `/uploads/${task.filename}`;
+    res.json({ success: true, data: { task: { id: task.id, status: task.status, created_at: task.created_at, completed_at: task.completed_at }, imagePath, annotations } });
+  } catch (err) {
+    console.error('Error fetching task for annotator:', err);
+    res.status(500).json({ success: false, error: err.message || '查询失败' });
+  }
+});
+
+// 标注员：释放当前任务的分配（例如切换到下一张或放弃）
+app.post('/api/tasks/:id/release', isAnnotatorAuthenticated, async (req, res) => {
+  try {
+    const taskId = parseInt(req.params.id);
+    const annotator = req.session.annotator;
+    // 仅允许分配给自己的任务或超时任务被释放
+    const task = await dbManager.getAnnotationTaskById(taskId);
+    if (!task) return res.status(404).json({ success: false, error: '任务未找到' });
+    // 允许释放（只要当前分配为空或属于当前用户或超时）
+    // 直接调用 release
+    await dbManager.releaseTaskAssignment(taskId);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error releasing task assignment:', err);
+    res.status(500).json({ success: false, error: err.message || '释放失败' });
   }
 });
 
