@@ -491,6 +491,19 @@ class SQLiteManager {
     }
 
     /**
+     * 标记单个任务为未导出（exported = 0）
+     */
+    markTaskUnexported(taskId) {
+        return new Promise((resolve, reject) => {
+            const sql = `UPDATE annotation_tasks SET exported = 0 WHERE id = ?`;
+            this.db.run(sql, [taskId], function(err) {
+                if (err) return reject(err);
+                resolve(this.changes);
+            });
+        });
+    }
+
+    /**
      * 获取随机待标注任务
      */
     getRandomPendingTask() {

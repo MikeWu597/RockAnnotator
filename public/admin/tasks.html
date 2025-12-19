@@ -292,7 +292,12 @@
                         </button>
                         ${task.status === 'completed' ? `
                         <button class="btn btn-sm btn-outline-warning ms-1 reset-task" data-id="${task.id}">
-                            <i class="fas fa-undo"></i> 重置
+                            <i class="fas fa-undo"></i> 重置标注
+                        </button>
+                        ` : ''}
+                        ${task.exported == 1 ? `
+                        <button class="btn btn-sm btn-outline-secondary ms-1 unexport-task" data-id="${task.id}">
+                            <i class="fas fa-redo"></i> 重置导出
                         </button>
                         ` : ''}
                     </td>
@@ -314,6 +319,27 @@
                 button.addEventListener('click', function() {
                     const taskId = this.getAttribute('data-id');
                     showResetConfirm(taskId);
+                });
+            });
+
+            // 绑定重置导出状态按钮（列表中的快捷操作）
+            document.querySelectorAll('.unexport-task').forEach(button => {
+                button.addEventListener('click', async function() {
+                    const taskId = this.getAttribute('data-id');
+                    if (!confirm('确认将此任务的导出状态重置为未导出吗？')) return;
+                    try {
+                        const resp = await fetch(`/api/admin/tasks/${taskId}/unexport`, { method: 'POST' });
+                        const j = await resp.json();
+                        if (j && j.success) {
+                            alert('已重置导出状态');
+                            loadTasks(currentPage);
+                        } else {
+                            alert('重置导出状态失败: ' + (j && j.error ? j.error : '未知错误'));
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert('网络错误，请稍后重试');
+                    }
                 });
             });
             
@@ -427,6 +453,12 @@
                                             </td>
                                         </tr>
                                         <tr>
+                                            <td><strong>导出状态:</strong></td>
+                                            <td>
+                                                ${task.exported == 1 ? '<span class="badge bg-success">已导出</span>' : '<span class="badge bg-secondary">未导出</span>'}
+                                            </td>
+                                        </tr>
+                                        <tr>
                                             <td><strong>创建时间:</strong></td>
                                             <td>${new Date(task.created_at).toLocaleString()}</td>
                                         </tr>
@@ -492,6 +524,29 @@
                         if (resetBtn) {
                             resetBtn.addEventListener('click', function() {
                                 showResetConfirm(taskId);
+                            });
+                        }
+
+                        // 绑定重置导出状态按钮（如果存在）
+                        const resetExportBtn = document.getElementById('resetExportBtn');
+                        if (resetExportBtn) {
+                            resetExportBtn.addEventListener('click', async function() {
+                                if (!confirm('确认将此任务的导出状态重置为未导出吗？')) return;
+                                try {
+                                    const resp = await fetch(`/api/admin/tasks/${taskId}/unexport`, { method: 'POST' });
+                                    const j = await resp.json();
+                                    if (j && j.success) {
+                                        alert('已重置导出状态');
+                                        // 重新加载任务列表和详情
+                                        loadTasks(currentPage);
+                                        showTaskDetail(taskId);
+                                    } else {
+                                        alert('重置导出状态失败: ' + (j && j.error ? j.error : '未知错误'));
+                                    }
+                                } catch (e) {
+                                    console.error(e);
+                                    alert('网络错误，请稍后重试');
+                                }
                             });
                         }
 

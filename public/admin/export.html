@@ -72,6 +72,9 @@
                                 <span class="default-text"><i class="fas fa-file-export me-1"></i>导出</span>
                                 <span class="loading-text d-none"><span class="spinner-border spinner-border-sm me-1"></span>正在导出...</span>
                             </button>
+                            <button id="previewBtn" class="btn btn-outline-primary ms-2">
+                                <i class="fas fa-eye me-1"></i>预览
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -96,6 +99,34 @@
     <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
     <script src="/admin/js/main.js"></script>
     <script>
+                // 预览模态框 HTML 插入
+                (function(){
+                        const modalHtml = `
+                        <div class="modal fade" id="exportPreviewModal" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">导出预览</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div id="previewCount" class="mb-2 text-muted"></div>
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-striped">
+                                                <thead><tr><th>ID</th><th>文件</th><th>尺寸</th><th>完成时间</th></tr></thead>
+                                                <tbody id="exportPreviewTableBody"></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>`;
+                        document.body.insertAdjacentHTML('beforeend', modalHtml);
+                })();
+
         function setAlert(type, message) {
             const alert = document.getElementById('exportAlert');
             alert.className = `alert alert-${type}`;
@@ -194,8 +225,65 @@
             }
         }
 
+        async function doPreview() {
+            clearAlert();
+            const startVal = document.getElementById('startTime').value;
+            const endVal = document.getElementById('endTime').value;
+
+            if (!startVal || !endVal) {
+                setAlert('warning', '请先选择开始和结束时间');
+                return;
+            }
+            const start = new Date(startVal);
+            const end = new Date(endVal);
+            if (isNaN(start) || isNaN(end)) {
+                setAlert('danger', '时间格式无效，请重新选择');
+                return;
+            }
+            if (start > end) {
+                setAlert('warning', '开始时间不能晚于结束时间');
+                return;
+            }
+
+            const onlyUnexported = document.getElementById('onlyUnexported').checked ? '1' : '0';
+            const params = new URLSearchParams({ start: toISO(startVal), end: toISO(endVal), onlyUnexported });
+
+            try {
+                const resp = await fetch(`/api/admin/export/preview?${params.toString()}`);
+                const j = await resp.json().catch(() => null);
+                if (!resp.ok || !j || !j.success) {
+                    const msg = (j && j.error) ? j.error : '预览失败';
+                    setAlert('danger', msg);
+                    return;
+                }
+
+                const tasks = j.data || [];
+                const tbody = document.getElementById('exportPreviewTableBody');
+                tbody.innerHTML = '';
+                if (tasks.length === 0) {
+                    document.getElementById('previewCount').textContent = '无匹配任务';
+                } else {
+                    document.getElementById('previewCount').textContent = `共 ${tasks.length} 条任务将被导出（仅预览）`;
+                    tasks.forEach(t => {
+                        const completedAt = t.completed_at ? new Date(t.completed_at).toLocaleString() : '-';
+                        const tr = document.createElement('tr');
+                            tr.innerHTML = `<td>${t.id}</td><td>${t.filename}</td><td>${t.width} x ${t.height}</td><td>${completedAt}</td>`;
+                        tbody.appendChild(tr);
+                    });
+                }
+
+                const modalEl = document.getElementById('exportPreviewModal');
+                const modal = new bootstrap.Modal(modalEl);
+                modal.show();
+            } catch (e) {
+                console.error(e);
+                setAlert('danger', '网络错误，请稍后重试');
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('exportBtn').addEventListener('click', doExport);
+            document.getElementById('previewBtn').addEventListener('click', doPreview);
             document.getElementById('quickToday').addEventListener('click', () => setQuickRange('today'));
             document.getElementById('quick7').addEventListener('click', () => setQuickRange(7));
             document.getElementById('quick30').addEventListener('click', () => setQuickRange(30));

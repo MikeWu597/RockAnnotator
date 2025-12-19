@@ -255,6 +255,53 @@ app.get('/api/admin/export', isAuthenticated, async (req, res) => {
   }
 });
 
+// 管理员：导出预览（返回将要导出的任务列表，但不实际导出）
+app.get('/api/admin/export/preview', isAuthenticated, async (req, res) => {
+  try {
+    const start = req.query.start || null; // ISO or local
+    const end = req.query.end || null;
+
+    // parseToUTCISO 重复逻辑与导出接口一致
+    function parseToUTCISO(input) {
+      if (!input) return null;
+      if (/Z|[+-]\d{2}:?\d{2}$/.test(input)) {
+        const d = new Date(input);
+        if (isNaN(d)) return null;
+        return d.toISOString();
+      }
+      const m = input.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+      if (!m) {
+        const d2 = new Date(input);
+        if (isNaN(d2)) return null;
+        return d2.toISOString();
+      }
+      const y = parseInt(m[1], 10);
+      const mo = parseInt(m[2], 10);
+      const da = parseInt(m[3], 10);
+      const hh = parseInt(m[4], 10);
+      const mi = parseInt(m[5], 10);
+      const utcMillis = Date.UTC(y, mo - 1, da, hh, mi) - (8 * 60 * 60 * 1000);
+      return new Date(utcMillis).toISOString();
+    }
+
+    const startISO = parseToUTCISO(start);
+    const endISO = parseToUTCISO(end);
+    const onlyUnexported = req.query.onlyUnexported === '1' || req.query.onlyUnexported === 'true';
+
+    let tasks = [];
+    if (onlyUnexported) {
+      tasks = await dbManager.getUnexportedCompletedTasksInRange(startISO, endISO);
+    } else {
+      tasks = await dbManager.getCompletedTasksInRange(startISO, endISO);
+    }
+
+    res.json({ success: true, data: tasks });
+  } catch (error) {
+    console.error('Preview error:', error);
+    res.status(500).json({ success: false, error: error.message || '预览失败' });
+  }
+});
+
 // 处理单个图片上传的API
 app.post('/api/admin/images/upload', isAuthenticated, singleUpload.single('image'), async (req, res) => {
   try {
@@ -487,6 +534,18 @@ app.post('/api/admin/tasks/:id/reset', isAuthenticated, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Error resetting task:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 管理员：重置任务导出状态（设置 exported = 0）
+app.post('/api/admin/tasks/:id/unexport', isAuthenticated, async (req, res) => {
+  try {
+    const taskId = parseInt(req.params.id);
+    const changes = await dbManager.markTaskUnexported(taskId);
+    res.json({ success: true, changes });
+  } catch (error) {
+    console.error('Error unexporting task:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
