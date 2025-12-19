@@ -70,9 +70,27 @@ class SQLiteManager {
                     this.createTables()
                       .then(() => this.ensureExportedColumn())
                       .then(() => this.ensureAssignmentColumns())
+                      .then(() => this.ensureAnnotatorHeartbeatColumn())
                       .then(resolve)
                       .catch(reject);
                 }
+            });
+        });
+    }
+
+    // 确保 annotators 表包含 last_heartbeat 列（兼容旧库）
+    ensureAnnotatorHeartbeatColumn() {
+        return new Promise((resolve, reject) => {
+            const sql = `PRAGMA table_info('annotators')`;
+            this.db.all(sql, [], (err, rows) => {
+                if (err) return reject(err);
+                const has = rows && rows.some(r => r.name === 'last_heartbeat');
+                if (has) return resolve();
+                const alter = `ALTER TABLE annotators ADD COLUMN last_heartbeat DATETIME NULL`;
+                this.db.run(alter, [], (e) => {
+                    if (e) return reject(e);
+                    resolve();
+                });
             });
         });
     }
@@ -671,15 +689,25 @@ class SQLiteManager {
                     return;
                 }
 
+                // 允许通过 annotators.last_heartbeat 控制：如果 assigned_to 的 annotator 有最近心跳，则不应被重新分配
                 const selectSql = `
                     SELECT at.id
                     FROM annotation_tasks at
+                    LEFT JOIN annotators a ON at.assigned_to = a.id
                     JOIN images i ON at.image_id = i.id
-                    WHERE at.status = 'pending' AND (at.assigned_to IS NULL OR datetime(at.assigned_at) <= datetime('now', '-' || ? || ' minutes'))
+                    WHERE at.status = 'pending'
+                      AND (
+                          at.assigned_to IS NULL
+                          OR datetime(at.assigned_at) <= datetime('now', '-' || ? || ' minutes')
+                          OR a.last_heartbeat IS NULL
+                          OR datetime(a.last_heartbeat) <= datetime('now', '-' || ? || ' minutes')
+                      )
                     ORDER BY RANDOM()
                     LIMIT 1
                 `;
-                this.db.get(selectSql, [String(lockMinutes)], (err2, row2) => {
+                // 参数： lockMinutes, heartbeatMinutes (use same value for heartbeat window default)
+                const heartbeatMinutes = lockMinutes >= 1 ? Math.min(5, Math.max(1, Math.floor(lockMinutes / 15))) : 2;
+                this.db.get(selectSql, [String(lockMinutes), String(heartbeatMinutes)], (err2, row2) => {
                 if (err) return reject(err);
                 if (err2) return reject(err2);
                 if (!row2) return resolve(null);
@@ -700,6 +728,32 @@ class SQLiteManager {
                     });
                 }.bind(this));
             });
+            });
+        });
+    }
+
+    /**
+     * 更新标注员心跳时间
+     */
+    updateAnnotatorHeartbeat(annotatorId) {
+        return new Promise((resolve, reject) => {
+            const sql = `UPDATE annotators SET last_heartbeat = datetime('now','localtime') WHERE id = ?`;
+            this.db.run(sql, [annotatorId], function(err) {
+                if (err) return reject(err);
+                resolve(this.changes);
+            });
+        });
+    }
+
+    /**
+     * 释放指定标注员的所有 pending 任务的分配（用于页面关闭）
+     */
+    releaseAssignmentsForAnnotator(annotatorId) {
+        return new Promise((resolve, reject) => {
+            const sql = `UPDATE annotation_tasks SET assigned_to = NULL, assigned_at = NULL WHERE assigned_to = ? AND status = 'pending'`;
+            this.db.run(sql, [annotatorId], function(err) {
+                if (err) return reject(err);
+                resolve(this.changes);
             });
         });
     }

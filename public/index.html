@@ -196,6 +196,8 @@
                         if (an && j.data && j.data.username) an.textContent = j.data.username;
                         loadAnnotatorThumbnails();
                         startThumbnailsAutoRefresh();
+                        // 启动心跳（每 20 秒上报）并在页面关闭时通知服务器释放分配
+                        startAnnotatorHeartbeat();
                         loadRandomTask();
                     } catch (e) {
                         showError('初始化应用程序时发生错误: ' + e.message);
@@ -326,6 +328,37 @@
         }
         function stopThumbnailsAutoRefresh() {
             if (_thumbsInterval) { clearInterval(_thumbsInterval); _thumbsInterval = null; }
+        }
+
+        // 标注员心跳：页面打开时定期上报，页面关闭时释放分配
+        let _heartbeatInterval = null;
+        function startAnnotatorHeartbeat() {
+            if (_heartbeatInterval) return;
+            // 立即发送一次心跳
+            sendAnnotatorHeartbeat();
+            _heartbeatInterval = setInterval(sendAnnotatorHeartbeat, 20000);
+            // 在页面卸载时尝试通知服务器释放分配（使用 sendBeacon 优先）
+            window.addEventListener('beforeunload', function() {
+                try {
+                    const url = '/api/annotator/close';
+                    if (navigator.sendBeacon) {
+                        navigator.sendBeacon(url, '');
+                    } else {
+                        // fetch keepalive
+                        fetch(url, { method: 'POST', keepalive: true });
+                    }
+                } catch (e) { /* ignore */ }
+            });
+        }
+
+        function stopAnnotatorHeartbeat() {
+            if (_heartbeatInterval) { clearInterval(_heartbeatInterval); _heartbeatInterval = null; }
+        }
+
+        function sendAnnotatorHeartbeat() {
+            try {
+                fetch('/api/annotator/heartbeat', { method: 'POST' }).catch(()=>{});
+            } catch (e) { /* ignore */ }
         }
         
         // 隐藏加载界面并显示消息
@@ -663,8 +696,8 @@
             canvas.addEventListener('mouseup', handleMouseUp);
             // wheel需要阻止默认滚动，设置 passive: false
             canvas.addEventListener('wheel', handleWheel, { passive: false });
-            // 阻止右键菜单以便右键用于平移
-            canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+            // 自定义右键：在多边形内部显示内建菜单
+            canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); showPolygonContextMenu(e); });
             
             // 键盘事件
             document.addEventListener('keydown', handleKeyDown);
@@ -889,6 +922,76 @@
         // 更新缩放级别显示
         function updateZoomLevel() {
             document.getElementById('zoomLevel').textContent = Math.round(scale * 100) + '%';
+        }
+
+        // 点是否在多边形内（画布坐标）。使用射线法。
+        function pointInPolygon(x, y, polyPoints) {
+            let inside = false;
+            for (let i = 0, j = polyPoints.length - 1; i < polyPoints.length; j = i++) {
+                const xi = polyPoints[i].x, yi = polyPoints[i].y;
+                const xj = polyPoints[j].x, yj = polyPoints[j].y;
+                const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        }
+
+        // 右键时在多边形内显示内建菜单（目前只有删除）
+        function showPolygonContextMenu(e) {
+            try {
+                const rect = canvas.getBoundingClientRect();
+                const cx = e.clientX - rect.left;
+                const cy = e.clientY - rect.top;
+
+                // 找到最上层（最后绘制）的多边形
+                let foundIndex = -1;
+                for (let i = polygons.length - 1; i >= 0; i--) {
+                    const poly = polygons[i];
+                    // 将多边形顶点转换为画布坐标
+                    const canvasPts = poly.points.map(p => imageToCanvasCoords(p.x, p.y));
+                    if (pointInPolygon(cx, cy, canvasPts)) { foundIndex = i; break; }
+                }
+
+                // 移除已有菜单
+                const prev = document.getElementById('polygonContextMenu');
+                if (prev) prev.remove();
+
+                if (foundIndex === -1) return; // 未点击到多边形
+
+                const menu = document.createElement('div');
+                menu.id = 'polygonContextMenu';
+                menu.style.position = 'fixed';
+                menu.style.left = e.clientX + 'px';
+                menu.style.top = e.clientY + 'px';
+                menu.style.background = '#fff';
+                menu.style.border = '1px solid rgba(0,0,0,0.12)';
+                menu.style.borderRadius = '4px';
+                menu.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+                menu.style.zIndex = 2000;
+                menu.style.padding = '6px';
+
+                const del = document.createElement('div');
+                del.textContent = '删除';
+                del.style.cursor = 'pointer';
+                del.style.padding = '4px 8px';
+                del.addEventListener('click', function() {
+                    polygons.splice(foundIndex, 1);
+                    updatePolygonCount();
+                    drawImage();
+                    menu.remove();
+                });
+
+                menu.appendChild(del);
+                document.body.appendChild(menu);
+
+                // 点击任意处关闭菜单
+                const onDocClick = function(ev) {
+                    if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('mousedown', onDocClick); }
+                };
+                document.addEventListener('mousedown', onDocClick);
+            } catch (err) {
+                console.error('showPolygonContextMenu error', err);
+            }
         }
         
         // 保存标注并加载新任务

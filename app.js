@@ -808,6 +808,32 @@ app.get('/api/tasks/random', isAnnotatorAuthenticated, async (req, res) => {
   }
 });
 
+// 标注员心跳（页面打开时定期上报）
+app.post('/api/annotator/heartbeat', isAnnotatorAuthenticated, async (req, res) => {
+  try {
+    const annotator = req.session.annotator;
+    await dbManager.updateAnnotatorHeartbeat(annotator.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error updating annotator heartbeat:', err);
+    res.status(500).json({ success: false, error: err.message || '心跳更新失败' });
+  }
+});
+
+// 标注员页面关闭：释放该 annotator 的所有 pending 任务分配（可通过 sendBeacon 在 unload 时调用）
+app.post('/api/annotator/close', isAnnotatorAuthenticated, async (req, res) => {
+  try {
+    const annotator = req.session.annotator;
+    const changes = await dbManager.releaseAssignmentsForAnnotator(annotator.id);
+    // 可选：清除 last_heartbeat
+    await dbManager.updateAnnotatorHeartbeat(annotator.id).catch(()=>{});
+    res.json({ success: true, changes });
+  } catch (err) {
+    console.error('Error releasing annotator assignments on close:', err);
+    res.status(500).json({ success: false, error: err.message || '释放失败' });
+  }
+});
+
 // 标注员：获取指定任务详情（用于跳回编辑），受 annotator 认证保护
 app.get('/api/tasks/:id', isAnnotatorAuthenticated, async (req, res) => {
   try {
