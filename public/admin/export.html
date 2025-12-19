@@ -52,6 +52,14 @@
                                     <button id="quick30" type="button" class="btn btn-outline-secondary">近30天</button>
                                 </div>
                             </div>
+                            <div class="col-12">
+                                <div class="form-check mt-2">
+                                    <input class="form-check-input" type="checkbox" value="1" id="onlyUnexported">
+                                    <label class="form-check-label" for="onlyUnexported">
+                                        仅导出未导出任务（已完成且未被导出）
+                                    </label>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="mt-3 text-muted small">
@@ -162,7 +170,8 @@
                 return;
             }
 
-            const params = new URLSearchParams({ start: toISO(startVal), end: toISO(endVal) });
+            const onlyUnexported = document.getElementById('onlyUnexported').checked ? '1' : '0';
+            const params = new URLSearchParams({ start: toISO(startVal), end: toISO(endVal), onlyUnexported });
 
             toggleLoading(true);
             try {

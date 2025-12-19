@@ -79,6 +79,7 @@
                                         <th>图片文件</th>
                                         <th>尺寸</th>
                                         <th>状态</th>
+                                        <th>导出状态</th>
                                         <th>创建时间</th>
                                         <th>完成时间</th>
                                         <th>操作</th>
@@ -86,7 +87,7 @@
                                 </thead>
                                 <tbody id="tasksTableBody">
                                     <tr>
-                                        <td colspan="7" class="text-center">
+                                        <td colspan="8" class="text-center">
                                             <div class="spinner-border text-primary" role="status">
                                                 <span class="visually-hidden">加载中...</span>
                                             </div>
@@ -252,7 +253,7 @@
             if (tasks.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="7" class="text-center">暂无任务数据</td>
+                        <td colspan="8" class="text-center">暂无任务数据</td>
                     </tr>
                 `;
                 document.getElementById('pagination').innerHTML = '';
@@ -273,11 +274,16 @@
                     : '-';
                 
                 const row = document.createElement('tr');
+                const exportedBadge = task.exported == 1
+                    ? '<span class="badge bg-success">已导出</span>'
+                    : '<span class="badge bg-secondary">未导出</span>';
+
                 row.innerHTML = `
                     <td>${task.id}</td>
                     <td>${task.filename}</td>
                     <td>${task.width} x ${task.height}</td>
                     <td>${statusBadge}</td>
+                    <td>${exportedBadge}</td>
                     <td>${new Date(task.created_at).toLocaleString()}</td>
                     <td>${completedAt}</td>
                     <td>
@@ -788,7 +794,7 @@
             const tbody = document.getElementById('tasksTableBody');
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="7" class="text-center text-danger">${message}</td>
+                    <td colspan="8" class="text-center text-danger">${message}</td>
                 </tr>
             `;
         }

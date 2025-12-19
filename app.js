@@ -201,13 +201,15 @@ app.get('/api/admin/export', isAuthenticated, async (req, res) => {
     if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true });
     if (!fs.existsSync(tmpRootDir)) fs.mkdirSync(tmpRootDir, { recursive: true });
 
+    const onlyUnexported = req.query.onlyUnexported === '1' || req.query.onlyUnexported === 'true';
     const zipAbsPath = await exportDrSong({
       dbManager,
       startISO: start,
       endISO: end,
       uploadsDir,
       downloadsDir,
-      tmpRootDir
+      tmpRootDir,
+      onlyUnexported
     });
 
     // 将绝对路径转换为可下载 URL 路径

@@ -27,8 +27,28 @@ class SQLiteManager {
                     reject(err);
                 } else {
                     console.log('Connected to the SQLite database.');
-                    this.createTables().then(resolve).catch(reject);
+                    this.createTables()
+                      .then(() => this.ensureExportedColumn())
+                      .then(resolve)
+                      .catch(reject);
                 }
+            });
+        });
+    }
+
+    // 确保 annotation_tasks 表包含 exported 列（兼容旧库）
+    ensureExportedColumn() {
+        return new Promise((resolve, reject) => {
+            const sql = `PRAGMA table_info('annotation_tasks')`;
+            this.db.all(sql, [], (err, rows) => {
+                if (err) return reject(err);
+                const has = rows && rows.some(r => r.name === 'exported');
+                if (has) return resolve();
+                const alter = `ALTER TABLE annotation_tasks ADD COLUMN exported INTEGER DEFAULT 0`;
+                this.db.run(alter, [], (e) => {
+                    if (e) return reject(e);
+                    resolve();
+                });
             });
         });
     }
@@ -66,6 +86,7 @@ class SQLiteManager {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     image_id INTEGER NOT NULL,
                     status TEXT DEFAULT 'pending',
+                    exported INTEGER DEFAULT 0,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     completed_at DATETIME NULL,
                     FOREIGN KEY (image_id) REFERENCES images (id)
@@ -293,6 +314,7 @@ class SQLiteManager {
                 SELECT 
                     at.id,
                     at.status,
+                    at.exported,
                     at.created_at,
                     at.completed_at,
                     i.filename,
@@ -355,6 +377,7 @@ class SQLiteManager {
                 SELECT 
                     at.id,
                     at.status,
+                    at.exported,
                     at.created_at,
                     at.completed_at,
                     i.filename,
@@ -403,11 +426,66 @@ class SQLiteManager {
                 sql += ` AND datetime(at.completed_at) <= datetime(?)`;
                 params.push(endISO);
             }
+            // 支持仅未导出过滤（按传入参数实现）
+            // 如果 caller 需要过滤 exported，请在 SQL 外层调用或使用 getCompletedTasksInRangeWithExported
             sql += ' ORDER BY at.completed_at ASC';
 
             this.db.all(sql, params, (err, rows) => {
                 if (err) return reject(err);
                 resolve(rows || []);
+            });
+        });
+    }
+
+    /**
+     * 获取时间范围内完成且未导出的任务（含图片信息）
+     */
+    getUnexportedCompletedTasksInRange(startISO, endISO) {
+        return new Promise((resolve, reject) => {
+            let sql = `
+                SELECT 
+                    at.id,
+                    at.status,
+                    at.exported,
+                    at.created_at,
+                    at.completed_at,
+                    i.filename,
+                    i.width,
+                    i.height
+                FROM annotation_tasks at
+                JOIN images i ON at.image_id = i.id
+                WHERE at.status = 'completed' AND (at.exported IS NULL OR at.exported = 0)
+            `;
+
+            const params = [];
+            if (startISO) {
+                sql += ` AND datetime(at.completed_at) >= datetime(?)`;
+                params.push(startISO);
+            }
+            if (endISO) {
+                sql += ` AND datetime(at.completed_at) <= datetime(?)`;
+                params.push(endISO);
+            }
+            sql += ' ORDER BY at.completed_at ASC';
+
+            this.db.all(sql, params, (err, rows) => {
+                if (err) return reject(err);
+                resolve(rows || []);
+            });
+        });
+    }
+
+    /**
+     * 标记一组任务为已导出
+     */
+    markTasksExported(taskIds) {
+        return new Promise((resolve, reject) => {
+            if (!Array.isArray(taskIds) || taskIds.length === 0) return resolve(0);
+            const placeholders = taskIds.map(() => '?').join(',');
+            const sql = `UPDATE annotation_tasks SET exported = 1 WHERE id IN (${placeholders})`;
+            this.db.run(sql, taskIds, function(err) {
+                if (err) return reject(err);
+                resolve(this.changes);
             });
         });
     }
