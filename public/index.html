@@ -169,12 +169,31 @@
         // 页面加载完成后初始化
         window.addEventListener('load', function() {
             console.log('Page loaded, initializing application');
-            try {
-                loadRandomTask();
-                setupEventListeners();
-            } catch (e) {
-                showError('初始化应用程序时发生错误: ' + e.message);
-            }
+            // 检查标注员会话，未登录则跳转到标注员登录页面
+            fetch('/api/annotator/session')
+                .then(r => r.json())
+                .then(j => {
+                    if (!j || !j.success) {
+                        // 若接口异常，仍尝试登录页面
+                        window.location.href = '/annotator/login';
+                        return;
+                    }
+                    if (!j.data) {
+                        window.location.href = '/annotator/login';
+                        return;
+                    }
+                    // 已登录，继续初始化
+                    try {
+                        loadRandomTask();
+                        setupEventListeners();
+                    } catch (e) {
+                        showError('初始化应用程序时发生错误: ' + e.message);
+                    }
+                })
+                .catch(err => {
+                    console.error('Session check failed', err);
+                    window.location.href = '/annotator/login';
+                });
         });
         
         // 加载随机标注任务

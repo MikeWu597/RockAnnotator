@@ -8,6 +8,7 @@ const multer = require('multer');
 const { imageSize } = require('image-size');
 const fs = require('fs');
 const { exportDrSong } = require('./scripts/dr_song_engine');
+const bcrypt = require('bcryptjs');
 
 // 加载配置文件
 const config = YAML.load(path.join(__dirname, 'config.yml'));
@@ -186,6 +187,11 @@ app.get('/admin/export', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin', 'export.html'));
 });
 
+// 标注员管理页面（管理员维护）
+app.get('/admin/annotators', isAuthenticated, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin', 'annotators.html'));
+});
+
 // 管理员：数据导出（Dr. Song JSON 格式）
 app.get('/api/admin/export', isAuthenticated, async (req, res) => {
   try {
@@ -306,6 +312,88 @@ app.get('/api/admin/export/preview', isAuthenticated, async (req, res) => {
   } catch (error) {
     console.error('Preview error:', error);
     res.status(500).json({ success: false, error: error.message || '预览失败' });
+  }
+});
+
+// 获取标注员列表（分页）
+app.get('/api/admin/annotators', isAuthenticated, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.pageSize) || 10;
+    const annotators = await dbManager.getAnnotators(page, pageSize);
+    const total = await dbManager.getAnnotatorsCount();
+    res.json({ success: true, data: { annotators, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } } });
+  } catch (err) {
+    console.error('Error fetching annotators:', err);
+    res.status(500).json({ success: false, error: err.message || '查询失败' });
+  }
+});
+
+// 创建标注员
+app.post('/api/admin/annotators', isAuthenticated, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ success: false, error: '用户名和密码必填' });
+    const hash = bcrypt.hashSync(password, 10);
+    const id = await dbManager.createAnnotator(username, hash);
+    res.json({ success: true, data: { id, username } });
+  } catch (err) {
+    console.error('Error creating annotator:', err);
+    res.status(500).json({ success: false, error: err.message || '创建失败' });
+  }
+});
+
+// 更新标注员（可选更新密码）
+app.put('/api/admin/annotators/:id', isAuthenticated, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { username, password } = req.body;
+    if (!username) return res.status(400).json({ success: false, error: '用户名必填' });
+    let hash = null;
+    if (password) hash = bcrypt.hashSync(password, 10);
+    const changes = await dbManager.updateAnnotator(id, username, hash);
+    res.json({ success: true, changes });
+  } catch (err) {
+    console.error('Error updating annotator:', err);
+    res.status(500).json({ success: false, error: err.message || '更新失败' });
+  }
+});
+
+// 删除标注员
+app.delete('/api/admin/annotators/:id', isAuthenticated, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const changes = await dbManager.deleteAnnotator(id);
+    res.json({ success: true, changes });
+  } catch (err) {
+    console.error('Error deleting annotator:', err);
+    res.status(500).json({ success: false, error: err.message || '删除失败' });
+  }
+});
+
+// 获取指定标注员的标注记录（管理员查看，带分页）
+app.get('/api/admin/annotators/:id/annotations', isAuthenticated, async (req, res) => {
+  try {
+    const annotatorId = parseInt(req.params.id);
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.pageSize) || 10;
+
+    const annotations = await dbManager.getAnnotationsByAnnotatorId(annotatorId, page, pageSize);
+    const total = await dbManager.getAnnotationsByAnnotatorCount(annotatorId);
+
+    // 尝试解析每条 annotation 的 content 字段为 JSON，若已为对象则保留
+    const normalized = annotations.map(a => {
+      let parsed = a.content;
+      if (typeof parsed === 'string') {
+        try { parsed = JSON.parse(parsed); } catch (e) { /* keep as raw string */ }
+      }
+      return Object.assign({}, a, { parsedContent: parsed });
+    });
+
+    res.json({ success: true, data: { annotations: normalized, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } } });
+  } catch (err) {
+    console.error('Error fetching annotator annotations:', err);
+    res.status(500).json({ success: false, error: err.message || '查询失败' });
   }
 });
 
@@ -494,10 +582,40 @@ app.get('/api/admin/tasks/:id', isAuthenticated, async (req, res) => {
     } catch (err) {
       console.warn('Failed to load annotations for task', taskId, err.message);
     }
-    
+
+    // 解析最近一条标注以尝试解析出 annotatorId，并查询用户名以便前端展示
+    let annotatorUsername = null;
+    try {
+      if (annotations && annotations.length > 0) {
+        const last = annotations[annotations.length - 1];
+
+        // 支持两种格式：
+        // 1) getAnnotationsByTaskId 已返回解析后的对象（直接包含 annotatorId）
+        // 2) 每条记录为 { content: '...json...' }
+        let parsed = null;
+        if (last && typeof last === 'object' && (last.annotatorId || last.annotator_id)) {
+          parsed = last;
+        } else if (last && last.content) {
+          try { parsed = JSON.parse(last.content); } catch (e) { parsed = null; }
+        } else if (typeof last === 'string') {
+          try { parsed = JSON.parse(last); } catch (e) { parsed = null; }
+        } else {
+          parsed = last;
+        }
+
+        const annotatorId = parsed && (parsed.annotatorId || parsed.annotator_id || parsed.user_id || parsed.userId);
+        if (annotatorId) {
+          const annot = await dbManager.getAnnotatorById(annotatorId);
+          if (annot && annot.username) annotatorUsername = annot.username;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to resolve annotator for task', taskId, err.message || err);
+    }
+
     res.json({
       success: true,
-      data: Object.assign({}, task, { annotations })
+      data: Object.assign({}, task, { annotations, annotator_username: annotatorUsername })
     });
   } catch (error) {
     res.status(500).json({
@@ -582,6 +700,57 @@ app.post('/api/admin/tasks/:id/unexport', isAuthenticated, async (req, res) => {
     console.error('Error unexporting task:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// 标注员鉴权中间件
+function isAnnotatorAuthenticated(req, res, next) {
+  if (req.session && req.session.annotator && req.session.annotator.id) return next();
+  res.status(401).json({ success: false, error: 'Annotator not authenticated' });
+}
+
+// 标注员登录页面
+app.get('/annotator/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'annotator', 'login.html'));
+});
+
+// 标注员登录处理
+app.post('/annotator/login', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).send('用户名和密码必填');
+  try {
+    const annot = await dbManager.getAnnotatorByUsername(username);
+    if (!annot) return res.status(401).send('用户名或密码不正确');
+    const match = bcrypt.compareSync(password, annot.password_hash);
+    if (!match) return res.status(401).send('用户名或密码不正确');
+    // 设置 session
+    req.session.annotator = { id: annot.id, username: annot.username };
+    req.session.save(() => {
+      res.redirect('/');
+    });
+  } catch (err) {
+    console.error('Annotator login error:', err);
+    res.status(500).send('内部错误');
+  }
+});
+
+// 标注员登出
+app.get('/annotator/logout', (req, res) => {
+  if (req.session) {
+    delete req.session.annotator;
+    req.session.save(() => {
+      res.redirect('/annotator/login');
+    });
+  } else {
+    res.redirect('/annotator/login');
+  }
+});
+
+// 返回当前标注员会话信息（用于前端判断）
+app.get('/api/annotator/session', (req, res) => {
+  if (req.session && req.session.annotator) {
+    return res.json({ success: true, data: req.session.annotator });
+  }
+  res.json({ success: true, data: null });
 });
 
 // 获取随机待标注任务的API
@@ -684,34 +853,26 @@ app.get('/admin/tags', isAuthenticated, (req, res) => {
 
 
 // 保存标注的API
-app.post('/api/annotations/save', async (req, res) => {
+app.post('/api/annotations/save', isAnnotatorAuthenticated, async (req, res) => {
   try {
     const { taskId, polygons } = req.body;
+    const annotator = req.session.annotator;
     
     if (!taskId || !polygons) {
-      return res.status(400).json({
-        success: false,
-        error: '缺少必要参数'
-      });
+      return res.status(400).json({ success: false, error: '缺少必要参数' });
     }
 
-    // 将标注内容以 JSON 存入 annotations 表中
-    const content = JSON.stringify({ taskId, polygons });
-    await dbManager.insertAnnotation(null, content);
+    // 将标注内容以 JSON 存入 annotations 表中，并绑定标注员ID
+    const content = JSON.stringify({ taskId, polygons, annotatorId: annotator.id });
+    await dbManager.insertAnnotation(annotator.id, content);
 
     // 更新任务状态为已完成
     await dbManager.updateTaskStatusToCompleted(taskId);
     
-    res.json({
-      success: true,
-      message: '标注已保存'
-    });
+    res.json({ success: true, message: '标注已保存' });
   } catch (error) {
     console.error('Error saving annotation:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

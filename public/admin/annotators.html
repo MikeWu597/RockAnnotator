@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>标注员管理 - RockAnnotator</title>
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/css/all.min.css">
+    <link href="/admin/css/style.css" rel="stylesheet">
+</head>
+<body>
+    <div id="admin-navbar"></div>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <div class="col-12 col-lg-8">
+                <div class="card">
+                    <div class="card-header">
+                        <strong><i class="fas fa-users me-1"></i>标注员管理</strong>
+                    </div>
+                    <div class="card-body">
+                        <div id="annotatorAlert" class="alert d-none" role="alert"></div>
+
+                        <form id="createAnnotatorForm" class="row g-2 mb-3">
+                            <div class="col-md-5">
+                                <input id="newUsername" class="form-control" placeholder="用户名" required />
+                            </div>
+                            <div class="col-md-5">
+                                <input id="newPassword" type="password" class="form-control" placeholder="密码" required />
+                            </div>
+                            <div class="col-md-2 d-grid">
+                                <button class="btn btn-primary" type="submit">创建</button>
+                            </div>
+                        </form>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped">
+                                <thead><tr><th>ID</th><th>用户名</th><th>创建时间</th><th>操作</th></tr></thead>
+                                <tbody id="annotatorsBody"></tbody>
+                            </table>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <label class="form-label mb-0">每页</label>
+                                <select id="annotatorsPageSize" class="form-select d-inline-block" style="width:auto;">
+                                    <option value="5">5</option>
+                                    <option value="10" selected>10</option>
+                                    <option value="20">20</option>
+                                </select>
+                            </div>
+                            <nav>
+                                <ul id="annotatorsPagination" class="pagination pagination-sm mb-0"></ul>
+                            </nav>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal fade" id="editAnnotatorModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">编辑标注员</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="editAlert" class="alert d-none" role="alert"></div>
+                    <input type="hidden" id="editId" />
+                    <div class="mb-2"><input id="editUsername" class="form-control" placeholder="用户名" /></div>
+                    <div class="mb-2"><input id="editPassword" type="password" class="form-control" placeholder="留空表示不修改密码" /></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button id="saveEditBtn" type="button" class="btn btn-primary">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+                <!-- Annotator Records Modal -->
+                <div class="modal fade" id="annotatorRecordsModal" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">标注记录 - <span id="recordsAnnotatorName"></span></h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="d-flex justify-content-between mb-2">
+                                    <div>
+                                        <label class="form-label mb-0">每页</label>
+                                        <select id="recordsPageSize" class="form-select d-inline-block" style="width:auto;">
+                                            <option value="5">5</option>
+                                            <option value="10" selected>10</option>
+                                            <option value="20">20</option>
+                                        </select>
+                                    </div>
+                                    <div><small id="recordsInfo" class="text-muted"></small></div>
+                                </div>
+
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-striped">
+                                        <thead><tr><th>ID</th><th>任务ID</th><th>创建时间</th><th>内容</th></tr></thead>
+                                        <tbody id="annotatorRecordsBody"></tbody>
+                                    </table>
+                                </div>
+
+                                <nav>
+                                    <ul id="annotatorRecordsPagination" class="pagination pagination-sm"></ul>
+                                </nav>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- JSON Viewer Modal -->
+                <div class="modal fade" id="jsonViewerModal" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">标注内容</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body"><pre id="jsonViewerPre" style="max-height:60vh; overflow:auto;"></pre></div>
+                        </div>
+                    </div>
+                </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/admin/js/main.js"></script>
+    <script>
+        function setAlert(id, type, msg) {
+            const el = document.getElementById(id);
+            el.className = `alert alert-${type}`;
+            el.textContent = msg;
+            el.classList.remove('d-none');
+            setTimeout(() => { el.classList.add('d-none'); }, 4000);
+        }
+
+        async function loadAnnotators(page = 1) {
+            const pageSize = parseInt(document.getElementById('annotatorsPageSize').value) || 10;
+            try {
+                const resp = await fetch(`/api/admin/annotators?page=${page}&pageSize=${pageSize}`);
+                const j = await resp.json().catch(()=>null);
+                if (!resp.ok || !j || !j.success) {
+                    console.warn('Failed to load annotators', j);
+                    return;
+                }
+                const data = j.data || {};
+                const list = data.annotators || [];
+                const pagination = data.pagination || { page:1, total:0, totalPages:0 };
+                const tbody = document.getElementById('annotatorsBody');
+                tbody.innerHTML = '';
+                list.forEach(a => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${a.id}</td><td>${a.username}</td><td>${new Date(a.created_at).toLocaleString()}</td><td><button class="btn btn-sm btn-outline-secondary me-1" data-id="${a.id}" data-username="${a.username}" onclick="openEdit(this)">编辑</button><button class="btn btn-sm btn-outline-info me-1" data-id="${a.id}" onclick="openAnnotatorRecords(this)">标注记录</button><button class="btn btn-sm btn-outline-danger" data-id="${a.id}" onclick="deleteAnnotator(this)">删除</button></td>`;
+                    tbody.appendChild(tr);
+                });
+
+                // pagination
+                const ul = document.getElementById('annotatorsPagination');
+                ul.innerHTML = '';
+                const totalPages = pagination.totalPages || 0;
+                const current = pagination.page || 1;
+                const prevLi = document.createElement('li');
+                prevLi.className = `page-item ${current<=1?'disabled':''}`;
+                prevLi.innerHTML = `<a class="page-link" href="#">&laquo;</a>`;
+                prevLi.addEventListener('click', (e)=>{e.preventDefault(); if(current>1) loadAnnotators(current-1);});
+                ul.appendChild(prevLi);
+                for(let p=1;p<=totalPages;p++){
+                    const li = document.createElement('li');
+                    li.className = `page-item ${p===current?'active':''}`;
+                    li.innerHTML = `<a class="page-link" href="#">${p}</a>`;
+                    li.addEventListener('click',(e)=>{e.preventDefault(); loadAnnotators(p);});
+                    ul.appendChild(li);
+                }
+                const nextLi = document.createElement('li');
+                nextLi.className = `page-item ${current>=totalPages?'disabled':''}`;
+                nextLi.innerHTML = `<a class="page-link" href="#">&raquo;</a>`;
+                nextLi.addEventListener('click',(e)=>{e.preventDefault(); if(current<totalPages) loadAnnotators(current+1);});
+                ul.appendChild(nextLi);
+
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        document.getElementById('createAnnotatorForm').addEventListener('submit', async function(e){
+            e.preventDefault();
+            const username = document.getElementById('newUsername').value.trim();
+            const password = document.getElementById('newPassword').value;
+            if (!username || !password) return setAlert('annotatorAlert','warning','用户名和密码为必填');
+            try {
+                const resp = await fetch('/api/admin/annotators', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username, password }) });
+                const j = await resp.json().catch(()=>null);
+                if (!resp.ok || !j || !j.success) { setAlert('annotatorAlert','danger', (j && j.error) || '创建失败'); return; }
+                setAlert('annotatorAlert','success','创建成功');
+                document.getElementById('newUsername').value=''; document.getElementById('newPassword').value='';
+                loadAnnotators(1);
+            } catch (e) { console.error(e); setAlert('annotatorAlert','danger','网络错误'); }
+        });
+
+        function openEdit(btn){
+            const id = btn.getAttribute('data-id');
+            const username = btn.getAttribute('data-username');
+            document.getElementById('editId').value = id;
+            document.getElementById('editUsername').value = username;
+            document.getElementById('editPassword').value = '';
+            const modal = new bootstrap.Modal(document.getElementById('editAnnotatorModal'));
+            modal.show();
+        }
+
+        document.getElementById('saveEditBtn').addEventListener('click', async function(){
+            const id = parseInt(document.getElementById('editId').value);
+            const username = document.getElementById('editUsername').value.trim();
+            const password = document.getElementById('editPassword').value;
+            if (!username) return setAlert('editAlert','warning','用户名不能为空');
+            try {
+                const body = { username };
+                if (password) body.password = password;
+                const resp = await fetch(`/api/admin/annotators/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+                const j = await resp.json().catch(()=>null);
+                if (!resp.ok || !j || !j.success) { setAlert('editAlert','danger',(j && j.error) || '更新失败'); return; }
+                setAlert('annotatorAlert','success','更新成功');
+                bootstrap.Modal.getInstance(document.getElementById('editAnnotatorModal')).hide();
+                loadAnnotators(1);
+            } catch (e) { console.error(e); setAlert('editAlert','danger','网络错误'); }
+        });
+
+        async function deleteAnnotator(btn){
+            if (!confirm('确定要删除此标注员吗？')) return;
+            const id = parseInt(btn.getAttribute('data-id'));
+            try {
+                const resp = await fetch(`/api/admin/annotators/${id}`, { method: 'DELETE' });
+                const j = await resp.json().catch(()=>null);
+                if (!resp.ok || !j || !j.success) { setAlert('annotatorAlert','danger',(j && j.error) || '删除失败'); return; }
+                setAlert('annotatorAlert','success','删除成功');
+                loadAnnotators(1);
+            } catch (e) { console.error(e); setAlert('annotatorAlert','danger','网络错误'); }
+        }
+
+        document.addEventListener('DOMContentLoaded', function(){
+            document.getElementById('annotatorsPageSize').addEventListener('change', ()=>loadAnnotators(1));
+            loadAnnotators(1);
+        });
+
+        // -------- Annotator Records --------
+        let currentRecordsAnnotatorId = null;
+
+        function openAnnotatorRecords(btn) {
+            const id = btn.getAttribute('data-id');
+            const name = btn.closest('tr').querySelector('td:nth-child(2)').textContent;
+            currentRecordsAnnotatorId = parseInt(id);
+            document.getElementById('recordsAnnotatorName').textContent = name;
+            document.getElementById('recordsPageSize').value = '10';
+            loadAnnotatorRecords(1);
+            const modal = new bootstrap.Modal(document.getElementById('annotatorRecordsModal'));
+            modal.show();
+        }
+
+        document.getElementById('recordsPageSize').addEventListener('change', ()=>{ loadAnnotatorRecords(1); });
+
+        async function loadAnnotatorRecords(page = 1) {
+            if (!currentRecordsAnnotatorId) return;
+            const pageSize = parseInt(document.getElementById('recordsPageSize').value) || 10;
+            try {
+                const resp = await fetch(`/api/admin/annotators/${currentRecordsAnnotatorId}/annotations?page=${page}&pageSize=${pageSize}`);
+                const j = await resp.json().catch(()=>null);
+                if (!resp.ok || !j || !j.success) { console.warn('Failed to load records', j); return; }
+                const data = j.data || {};
+                const list = data.annotations || [];
+                const pagination = data.pagination || { page:1, total:0, totalPages:0 };
+
+                const tbody = document.getElementById('annotatorRecordsBody');
+                tbody.innerHTML = '';
+                list.forEach(a => {
+                    const parsed = a.parsedContent || a.content || '';
+                    const taskId = (parsed && (parsed.taskId || parsed.task_id)) ? (parsed.taskId || parsed.task_id) : '-';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${a.id}</td><td>${taskId}</td><td>${new Date(a.created_at).toLocaleString()}</td><td><button class="btn btn-sm btn-outline-primary me-1" onclick="jumpToTaskPage('${taskId}')">跳转</button><button class="btn btn-sm btn-outline-secondary" data-json='${escapeHtml(JSON.stringify(parsed))}' onclick="openJsonViewer(this)">查看</button></td>`;
+                    tbody.appendChild(tr);
+                });
+
+                // pagination
+                const ul = document.getElementById('annotatorRecordsPagination');
+                ul.innerHTML = '';
+                const totalPages = pagination.totalPages || 0;
+                const current = pagination.page || 1;
+                const prevLi = document.createElement('li');
+                prevLi.className = `page-item ${current<=1?'disabled':''}`;
+                prevLi.innerHTML = `<a class="page-link" href="#">&laquo;</a>`;
+                prevLi.addEventListener('click', (e)=>{e.preventDefault(); if(current>1) loadAnnotatorRecords(current-1);});
+                ul.appendChild(prevLi);
+                for(let p=1;p<=totalPages;p++){
+                    const li = document.createElement('li');
+                    li.className = `page-item ${p===current?'active':''}`;
+                    li.innerHTML = `<a class="page-link" href="#">${p}</a>`;
+                    li.addEventListener('click',(e)=>{e.preventDefault(); loadAnnotatorRecords(p);});
+                    ul.appendChild(li);
+                }
+                const nextLi = document.createElement('li');
+                nextLi.className = `page-item ${current>=totalPages?'disabled':''}`;
+                nextLi.innerHTML = `<a class="page-link" href="#">&raquo;</a>`;
+                nextLi.addEventListener('click',(e)=>{e.preventDefault(); if(current<totalPages) loadAnnotatorRecords(current+1);});
+                ul.appendChild(nextLi);
+
+                document.getElementById('recordsInfo').textContent = `共 ${pagination.total || 0} 条`;
+
+            } catch (e) { console.error(e); }
+        }
+
+        function openJsonViewer(btn) {
+            const jsonStr = btn.getAttribute('data-json') || '';
+            const pre = document.getElementById('jsonViewerPre');
+            try {
+                const pretty = JSON.stringify(JSON.parse(unescapeHtml(jsonStr)), null, 2);
+                pre.textContent = pretty;
+            } catch (e) {
+                pre.textContent = jsonStr;
+            }
+            const modal = new bootstrap.Modal(document.getElementById('jsonViewerModal'));
+            modal.show();
+        }
+
+        function jumpToTaskPage(taskId) {
+            if (!taskId || taskId === '-') return alert('无效的任务ID，无法跳转');
+            // 导航到管理员任务页面并带上查询参数，页面会自动打开详情
+            window.location.href = '/admin/tasks?taskId=' + encodeURIComponent(taskId);
+        }
+
+        // small helpers to avoid XSS in data attributes
+        function escapeHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+        function unescapeHtml(str) { return String(str).replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'"); }
+    </script>
+</body>
+</html>

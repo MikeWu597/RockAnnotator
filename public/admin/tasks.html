@@ -49,6 +49,13 @@
                                     <option value="100">100条</option>
                                 </select>
                             </div>
+                            <div class="col-md-3">
+                                <label for="taskIdSearch" class="form-label">按任务ID查询</label>
+                                <div class="input-group">
+                                    <input id="taskIdSearch" class="form-control" placeholder="输入任务ID并回车或点查找" />
+                                    <button id="taskIdSearchBtn" class="btn btn-outline-secondary">查找</button>
+                                </div>
+                            </div>
                             
                             <div class="col-md-3">
                                 <button id="refreshBtn" class="btn btn-outline-primary mt-4">
@@ -466,6 +473,12 @@
                                             <td><strong>完成时间:</strong></td>
                                             <td>${completedAt}</td>
                                         </tr>
+                                        ${task.status === 'completed' ? `
+                                        <tr>
+                                            <td><strong>标注员:</strong></td>
+                                            <td>${task.annotator_username ? task.annotator_username : '-'}</td>
+                                        </tr>
+                                        ` : ''}
                                     </table>
                                 </div>
                                 
@@ -853,6 +866,36 @@
                 </tr>
             `;
         }
+
+        // 按ID查找任务并打开详情
+        function searchTaskById() {
+            const v = document.getElementById('taskIdSearch').value.trim();
+            if (!v) return alert('请输入任务 ID');
+            const id = parseInt(v, 10);
+            if (isNaN(id) || id <= 0) return alert('无效的任务 ID');
+            showTaskDetail(id);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // 绑定查找按钮与回车
+            const btn = document.getElementById('taskIdSearchBtn');
+            if (btn) btn.addEventListener('click', searchTaskById);
+            const input = document.getElementById('taskIdSearch');
+            if (input) input.addEventListener('keypress', function(e){ if (e.key === 'Enter') { e.preventDefault(); searchTaskById(); } });
+
+            // 若 URL 带有 ?taskId=NN 则自动打开详情
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const tid = params.get('taskId');
+                if (tid) {
+                    const id = parseInt(tid, 10);
+                    if (!isNaN(id)) {
+                        // 稍微延迟以确保页面脚本已就绪
+                        setTimeout(() => { showTaskDetail(id); }, 200);
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        });
     </script>
 </body>
 </html>

@@ -144,6 +144,13 @@ class SQLiteManager {
                     zip_path TEXT NOT NULL,
                     created_at DATETIME DEFAULT (datetime('now','localtime'))
                 );
+                
+                CREATE TABLE IF NOT EXISTS annotators (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at DATETIME DEFAULT (datetime('now','localtime'))
+                );
             `;
 
             this.db.exec(createTableSQL, (err) => {
@@ -282,6 +289,33 @@ class SQLiteManager {
                 } else {
                     resolve(rows);
                 }
+            });
+        });
+    }
+
+    /**
+     * 根据标注员ID获取标注（带分页）
+     */
+    getAnnotationsByAnnotatorId(annotatorId, page = 1, pageSize = 10) {
+        return new Promise((resolve, reject) => {
+            const offset = (page - 1) * pageSize;
+            const sql = `SELECT id, user_id, content, created_at FROM annotations WHERE user_id = ? ORDER BY id DESC LIMIT ? OFFSET ?`;
+            this.db.all(sql, [annotatorId, pageSize, offset], (err, rows) => {
+                if (err) return reject(err);
+                resolve(rows || []);
+            });
+        });
+    }
+
+    /**
+     * 获取指定标注员的标注总数
+     */
+    getAnnotationsByAnnotatorCount(annotatorId) {
+        return new Promise((resolve, reject) => {
+            const sql = `SELECT COUNT(*) as count FROM annotations WHERE user_id = ?`;
+            this.db.get(sql, [annotatorId], (err, row) => {
+                if (err) return reject(err);
+                resolve(row ? row.count : 0);
             });
         });
     }
@@ -699,6 +733,106 @@ class SQLiteManager {
                         });
                     }
                 });
+            });
+        });
+    }
+
+    /**
+     * 创建标注员账号（管理员维护）
+     */
+    createAnnotator(username, passwordHash) {
+        return new Promise((resolve, reject) => {
+            const sql = 'INSERT INTO annotators (username, password_hash, created_at) VALUES (?, ?, datetime(\'now\',\'localtime\'))';
+            this.db.run(sql, [username, passwordHash], function(err) {
+                if (err) return reject(err);
+                resolve(this.lastID);
+            });
+        });
+    }
+
+    /**
+     * 获取标注员列表（分页）
+     */
+    getAnnotators(page = 1, pageSize = 10) {
+        return new Promise((resolve, reject) => {
+            const offset = (page - 1) * pageSize;
+            const sql = 'SELECT id, username, created_at FROM annotators ORDER BY id DESC LIMIT ? OFFSET ?';
+            this.db.all(sql, [pageSize, offset], (err, rows) => {
+                if (err) return reject(err);
+                resolve(rows || []);
+            });
+        });
+    }
+
+    /**
+     * 获取标注员总数
+     */
+    getAnnotatorsCount() {
+        return new Promise((resolve, reject) => {
+            const sql = 'SELECT COUNT(*) as count FROM annotators';
+            this.db.get(sql, [], (err, row) => {
+                if (err) return reject(err);
+                resolve(row ? row.count : 0);
+            });
+        });
+    }
+
+    /**
+     * 根据ID获取标注员
+     */
+    getAnnotatorById(id) {
+        return new Promise((resolve, reject) => {
+            const sql = 'SELECT id, username, created_at FROM annotators WHERE id = ?';
+            this.db.get(sql, [id], (err, row) => {
+                if (err) return reject(err);
+                resolve(row || null);
+            });
+        });
+    }
+
+    /**
+     * 根据用户名获取标注员（包含密码Hash，用于鉴权）
+     */
+    getAnnotatorByUsername(username) {
+        return new Promise((resolve, reject) => {
+            const sql = 'SELECT * FROM annotators WHERE username = ?';
+            this.db.get(sql, [username], (err, row) => {
+                if (err) return reject(err);
+                resolve(row || null);
+            });
+        });
+    }
+
+    /**
+     * 更新标注员信息（可更新用户名或密码Hash）
+     */
+    updateAnnotator(id, username, passwordHash = null) {
+        return new Promise((resolve, reject) => {
+            if (passwordHash) {
+                const sql = 'UPDATE annotators SET username = ?, password_hash = ? WHERE id = ?';
+                this.db.run(sql, [username, passwordHash, id], function(err) {
+                    if (err) return reject(err);
+                    resolve(this.changes);
+                });
+            } else {
+                const sql = 'UPDATE annotators SET username = ? WHERE id = ?';
+                this.db.run(sql, [username, id], function(err) {
+                    if (err) return reject(err);
+                    resolve(this.changes);
+                });
+            }
+        });
+    }
+
+    /**
+     * 删除标注员
+     */
+    deleteAnnotator(id) {
+        return new Promise((resolve, reject) => {
+            const sql = 'DELETE FROM annotators WHERE id = ?';
+            this.db.run(sql, [id], function(err) {
+                if (err) return reject(err);
+                resolve(this.changes);
             });
         });
     }

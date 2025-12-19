@@ -8,6 +8,14 @@
     <link href="/admin/css/style.css" rel="stylesheet">
     <!-- Font Awesome 图标 -->
     <link rel="stylesheet" href="/css/all.min.css">
+    <style>
+        /* Dashboard 一行显示五个卡片，宽屏每个约 20% ，窄屏自动折行 */
+        .dashboard-cards { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; }
+        .dashboard-card { flex: 1 1 20%; min-width: 180px; }
+        @media (max-width: 767px) {
+            .dashboard-card { flex: 1 1 100%; }
+        }
+    </style>
 </head>
 <body>
     <div id="admin-navbar"></div>
@@ -23,52 +31,54 @@
             </div>
         </div>
         
-        <!-- 功能卡片 -->
-        <div class="row mt-4">
-            <div class="col-md-3">
+        <!-- 功能卡片（单行，响应式折行） -->
+        <div class="dashboard-cards">
+            <div class="dashboard-card">
                 <div class="card h-100">
                     <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="fas fa-upload me-2"></i>图片上传
-                        </h5>
+                        <h5 class="card-title"><i class="fas fa-upload me-2"></i>图片上传</h5>
                         <p class="card-text">上传新的图片用于标注任务。支持 JPG 和 PNG 格式。</p>
                         <a href="/admin/upload" class="btn btn-primary">开始上传</a>
                     </div>
                 </div>
             </div>
-            
-            <div class="col-md-3">
+
+            <div class="dashboard-card">
                 <div class="card h-100">
                     <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="fas fa-tasks me-2"></i>标注任务状态
-                        </h5>
+                        <h5 class="card-title"><i class="fas fa-tasks me-2"></i>标注任务状态</h5>
                         <p class="card-text">查看和管理标注任务的状态和进度。</p>
                         <a href="/admin/tasks" class="btn btn-success">查看详情</a>
                     </div>
                 </div>
             </div>
 
-            <div class="col-md-3">
+            <div class="dashboard-card">
                 <div class="card h-100">
                     <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="fas fa-tags me-2"></i>标签管理
-                        </h5>
+                        <h5 class="card-title"><i class="fas fa-tags me-2"></i>标签管理</h5>
                         <p class="card-text">管理标注时可用的标签（例如 car、man、bicycle）。</p>
                         <a href="/admin/tags" class="btn btn-warning">管理标签</a>
                     </div>
                 </div>
             </div>
-            
-            <div class="col-md-3">
+
+            <div class="dashboard-card">
                 <div class="card h-100">
                     <div class="card-body">
-                        <h5 class="card-title">
-                            <i class="fas fa-download me-2"></i>数据导出
-                        </h5>
+                        <h5 class="card-title"><i class="fas fa-download me-2"></i>数据导出</h5>
                         <p class="card-text">导出标注数据为多种格式供分析使用。</p>
-                        <a href="#" class="btn btn-info">开始导出</a>
+                        <a href="/admin/export" class="btn btn-info">开始导出</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashboard-card">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-user-tie me-2"></i>标注员管理</h5>
+                        <p class="card-text">管理标注员账号（用户名/密码），用于分配任务和审计。</p>
+                        <a href="/admin/annotators" class="btn btn-secondary">管理标注员</a>
                     </div>
                 </div>
             </div>
