@@ -177,8 +177,14 @@
         }
 
         function toISO(value) {
-            // 从 datetime-local 值转换为 ISO 字符串（UTC）
+            // 接受 datetime-local 的值：
+            // - 如果传入的是 datetime-local 字符串（如 "2025-12-19T15:00"），直接返回该字符串
+            //   （保持为本地时间字符串，避免被转换为带 Z 的 UTC ISO 导致时差）。
+            // - 否则尝试用 Date 构造并返回 toISOString()
             if (!value) return '';
+            if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) {
+                return value;
+            }
             const d = new Date(value);
             if (isNaN(d.getTime())) return '';
             return d.toISOString();

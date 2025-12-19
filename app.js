@@ -209,33 +209,37 @@ app.get('/api/admin/export', isAuthenticated, async (req, res) => {
     if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true });
     if (!fs.existsSync(tmpRootDir)) fs.mkdirSync(tmpRootDir, { recursive: true });
 
-    // 将传入的时间适配为 UTC ISO，兼容客户端发送的本地时间（无时区）或带时区的 ISO
+    // 将传入的时间适配为数据库可比较的本地时间字符串（格式：YYYY-MM-DD HH:MM:SS）
+    // 目的：客户端通常发送无时区的 datetime-local（如 2025-12-19T15:00），应按本地时间直接比较，避免错误的 UTC 偏移。
     function parseToUTCISO(input) {
       if (!input) return null;
-      // 如果包含时区信息（Z 或 ±hh:mm），直接使用 Date 解析为 UTC
+      // 如果包含时区信息（Z 或 ±hh:mm），解析为 Date 后转换为本地时间字符串
+      function toLocalSqlString(d) {
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      }
+
       if (/Z|[+-]\d{2}:?\d{2}$/.test(input)) {
         const d = new Date(input);
         if (isNaN(d)) return null;
-        return d.toISOString();
+        return toLocalSqlString(d);
       }
 
-      // 否则按东八区（UTC+8）解释输入的本地时间（格式 YYYY-MM-DDTHH:mm 或类似），转换为 UTC
-      // 解析数字组件
+      // 匹配 YYYY-MM-DDTHH:mm 或类似格式，直接转换为数据库本地时间格式（不做时区偏移）
       const m = input.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-      if (!m) {
-        // 回退到 Date 解析
-        const d2 = new Date(input);
-        if (isNaN(d2)) return null;
-        return d2.toISOString();
+      if (m) {
+        const y = m[1];
+        const mo = m[2];
+        const da = m[3];
+        const hh = m[4];
+        const mi = m[5];
+        return `${y}-${mo}-${da} ${hh}:${mi}:00`;
       }
-      const y = parseInt(m[1], 10);
-      const mo = parseInt(m[2], 10);
-      const da = parseInt(m[3], 10);
-      const hh = parseInt(m[4], 10);
-      const mi = parseInt(m[5], 10);
-      // 本地（东八） -> UTC = local - 8h
-      const utcMillis = Date.UTC(y, mo - 1, da, hh, mi) - (8 * 60 * 60 * 1000);
-      return new Date(utcMillis).toISOString();
+
+      // 最后回退：让 Date 解析并转换为本地时间字符串
+      const d2 = new Date(input);
+      if (isNaN(d2)) return null;
+      return toLocalSqlString(d2);
     }
 
     const startISO = parseToUTCISO(start);
@@ -280,27 +284,30 @@ app.get('/api/admin/export/preview', isAuthenticated, async (req, res) => {
     const idsParam = req.query.ids || null;
     const filename = req.query.filename || null;
 
-    // parseToUTCISO 重复逻辑与导出接口一致
+    // parseToUTCISO 重复逻辑与导出接口一致（保持行为一致：将输入统一为本地数据库可比较时间字符串）
     function parseToUTCISO(input) {
       if (!input) return null;
+      function toLocalSqlString(d) {
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      }
       if (/Z|[+-]\d{2}:?\d{2}$/.test(input)) {
         const d = new Date(input);
         if (isNaN(d)) return null;
-        return d.toISOString();
+        return toLocalSqlString(d);
       }
       const m = input.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-      if (!m) {
-        const d2 = new Date(input);
-        if (isNaN(d2)) return null;
-        return d2.toISOString();
+      if (m) {
+        const y = m[1];
+        const mo = m[2];
+        const da = m[3];
+        const hh = m[4];
+        const mi = m[5];
+        return `${y}-${mo}-${da} ${hh}:${mi}:00`;
       }
-      const y = parseInt(m[1], 10);
-      const mo = parseInt(m[2], 10);
-      const da = parseInt(m[3], 10);
-      const hh = parseInt(m[4], 10);
-      const mi = parseInt(m[5], 10);
-      const utcMillis = Date.UTC(y, mo - 1, da, hh, mi) - (8 * 60 * 60 * 1000);
-      return new Date(utcMillis).toISOString();
+      const d2 = new Date(input);
+      if (isNaN(d2)) return null;
+      return toLocalSqlString(d2);
     }
 
     const startISO = parseToUTCISO(start);
