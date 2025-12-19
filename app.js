@@ -427,6 +427,49 @@ app.get('/api/admin/annotators/:id/annotations', isAuthenticated, async (req, re
   }
 });
 
+// 管理员：导出指定标注员的标注为 CSV（可用 Excel 打开）
+app.get('/api/admin/annotators/:id/annotations/export', isAuthenticated, async (req, res) => {
+  try {
+    const annotatorId = parseInt(req.params.id);
+    const annot = await dbManager.getAnnotatorById(annotatorId);
+    if (!annot) return res.status(404).json({ success: false, error: '标注员未找到' });
+
+    const total = await dbManager.getAnnotationsByAnnotatorCount(annotatorId);
+    const annotations = await dbManager.getAnnotationsByAnnotatorId(annotatorId, 1, Math.max(total, 1000));
+
+    // 生成 CSV，列：id, task_id, created_at, content
+    const escapeCell = (s) => {
+      if (s === null || s === undefined) return '';
+      const str = String(s);
+      return '"' + str.replace(/"/g, '""') + '"';
+    };
+
+    const rows = [];
+    rows.push(['id','task_id','created_at','content'].map(escapeCell).join(','));
+    for (const a of (annotations || [])) {
+      let parsed = a.content;
+      let taskId = '';
+      if (typeof parsed === 'string') {
+        try { parsed = JSON.parse(parsed); } catch (e) { /* keep string */ }
+      }
+      if (parsed && typeof parsed === 'object') {
+        taskId = parsed.taskId || parsed.task_id || '';
+      }
+      const contentStr = (typeof a.content === 'string') ? a.content : JSON.stringify(a.content || parsed || '');
+      rows.push([a.id || '', taskId || '', a.created_at || '', contentStr].map(escapeCell).join(','));
+    }
+
+    const csv = rows.join('\r\n');
+    const filename = `annotations_${annot.username || annotatorId}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (err) {
+    console.error('Error exporting annotator annotations:', err);
+    res.status(500).json({ success: false, error: err.message || '导出失败' });
+  }
+});
+
 // 管理员：获取导出记录（带分页）
 app.get('/api/admin/export/records', isAuthenticated, async (req, res) => {
   try {

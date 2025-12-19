@@ -87,7 +87,10 @@
                         <div class="modal-content">
                             <div class="modal-header">
                                 <h5 class="modal-title">标注记录 - <span id="recordsAnnotatorName"></span></h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                <div>
+                                    <button id="exportRecordsBtn" type="button" class="btn btn-sm btn-outline-success me-2">导出为 Excel</button>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
                             </div>
                             <div class="modal-body">
                                 <div class="d-flex justify-content-between mb-2">
@@ -251,6 +254,8 @@
         // -------- Annotator Records --------
         let currentRecordsAnnotatorId = null;
 
+        document.getElementById('exportRecordsBtn').addEventListener('click', exportAnnotatorRecords);
+
         function openAnnotatorRecords(btn) {
             const id = btn.getAttribute('data-id');
             const name = btn.closest('tr').querySelector('td:nth-child(2)').textContent;
@@ -260,6 +265,29 @@
             loadAnnotatorRecords(1);
             const modal = new bootstrap.Modal(document.getElementById('annotatorRecordsModal'));
             modal.show();
+        }
+
+        async function exportAnnotatorRecords() {
+            if (!currentRecordsAnnotatorId) return alert('请选择一个标注员');
+            const resp = await fetch(`/api/admin/annotators/${currentRecordsAnnotatorId}/annotations/export`);
+            if (!resp.ok) {
+                const j = await resp.json().catch(()=>null);
+                return alert('导出失败: ' + (j && j.error ? j.error : resp.statusText));
+            }
+            const blob = await resp.blob();
+            // 从 Content-Disposition 中尝试获取文件名
+            const cd = resp.headers.get('Content-Disposition') || '';
+            let filename = 'annotations.csv';
+            const m = cd.match(/filename\s*=\s*"?([^";]+)"?/i);
+            if (m) filename = m[1];
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
         }
 
         document.getElementById('recordsPageSize').addEventListener('change', ()=>{ loadAnnotatorRecords(1); });
