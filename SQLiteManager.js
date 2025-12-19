@@ -754,6 +754,18 @@ class SQLiteManager {
         });
     }
 
+    markTasksUnexported(taskIds) {
+        return new Promise((resolve, reject) => {
+            if (!Array.isArray(taskIds) || taskIds.length === 0) return resolve(0);
+            const placeholders = taskIds.map(() => '?').join(',');
+            const sql = `UPDATE annotation_tasks SET exported = 0 WHERE id IN (${placeholders})`;
+            this.db.run(sql, taskIds, function(err) {
+                if (err) return reject(err);
+                resolve(this.changes);
+            });
+        });
+    }
+
     /**
      * 标记单个任务为未导出（exported = 0）
      */

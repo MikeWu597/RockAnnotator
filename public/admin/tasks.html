@@ -212,6 +212,86 @@
                 loadTasks(currentPage);
             });
 
+            // 批量操作按钮（仅在有筛选条件时显示）
+            const deleteMatchBtn = document.createElement('button');
+            deleteMatchBtn.id = 'deleteMatchingBtn';
+            deleteMatchBtn.className = 'btn btn-danger mt-3 w-100 d-none';
+            deleteMatchBtn.innerHTML = '<i class="fas fa-trash me-1"></i> 删除匹配';
+
+            const resetMatchBtn = document.createElement('button');
+            resetMatchBtn.id = 'resetMatchingBtn';
+            resetMatchBtn.className = 'btn btn-warning mt-3 w-100 d-none';
+            resetMatchBtn.innerHTML = '<i class="fas fa-undo me-1"></i> 重置匹配标注';
+
+            const unexportMatchBtn = document.createElement('button');
+            unexportMatchBtn.id = 'unexportMatchingBtn';
+            unexportMatchBtn.className = 'btn btn-secondary mt-3 w-100 d-none';
+            unexportMatchBtn.innerHTML = '<i class="fas fa-redo me-1"></i> 重置匹配导出';
+
+            // 将这些按钮插入到刷新按钮旁（refreshBtn 的父容器）
+            const refreshBtn = document.getElementById('refreshBtn');
+            if (refreshBtn && refreshBtn.parentElement) {
+                const parent = refreshBtn.parentElement;
+                parent.appendChild(deleteMatchBtn);
+                parent.appendChild(resetMatchBtn);
+                parent.appendChild(unexportMatchBtn);
+            }
+
+            function updateBatchButtonsVisibility() {
+                const filename = (document.getElementById('filenameSearch') && document.getElementById('filenameSearch').value) ? document.getElementById('filenameSearch').value.trim() : '';
+                const status = document.getElementById('statusFilter').value || '';
+                const shouldShow = (filename !== '') || (status === 'pending' || status === 'completed');
+                [deleteMatchBtn, resetMatchBtn, unexportMatchBtn].forEach(btn => {
+                    if (shouldShow) btn.classList.remove('d-none'); else btn.classList.add('d-none');
+                });
+            }
+
+            // 绑定过滤项变化以更新按钮显示
+            document.getElementById('statusFilter').addEventListener('change', () => { updateBatchButtonsVisibility(); });
+            const filenameInputElem = document.getElementById('filenameSearch');
+            if (filenameInputElem) filenameInputElem.addEventListener('input', () => { updateBatchButtonsVisibility(); });
+
+            // 批量操作通用函数
+            async function performBatchAction(path, successKeyName) {
+                const status = document.getElementById('statusFilter').value || '';
+                const filename = (document.getElementById('filenameSearch') && document.getElementById('filenameSearch').value) ? document.getElementById('filenameSearch').value.trim() : '';
+                const params = new URLSearchParams();
+                if (status) params.append('status', status);
+                if (filename) params.append('filename', filename);
+                try {
+                    const resp = await fetch(`${path}?${params.toString()}`, { method: 'POST' });
+                    const j = await resp.json().catch(()=>null);
+                    if (!resp.ok || !j || !j.success) {
+                        alert('操作失败: ' + (j && j.error ? j.error : '未知错误'));
+                        return null;
+                    }
+                    return j;
+                } catch (e) {
+                    console.error(e);
+                    alert('网络错误，请稍后重试');
+                    return null;
+                }
+            }
+
+            // 绑定按钮事件
+            deleteMatchBtn.addEventListener('click', async function() {
+                if (!confirm('确认删除所有匹配条件的任务及其文件？此操作不可逆，且不受分页限制。')) return;
+                const j = await performBatchAction('/api/admin/tasks/delete-matching');
+                if (j) { alert('已删除 ' + (j.deleted || 0) + ' 个任务'); loadTasks(1); }
+            });
+
+            resetMatchBtn.addEventListener('click', async function() {
+                if (!confirm('确认删除这些任务的标注并将它们重置为待标注？此操作不可逆。')) return;
+                const j = await performBatchAction('/api/admin/tasks/reset-matching');
+                if (j) { alert('已重置 ' + (j.reset || 0) + ' 个任务'); loadTasks(1); }
+            });
+
+            unexportMatchBtn.addEventListener('click', async function() {
+                if (!confirm('确认将这些任务的导出状态重置为未导出？')) return;
+                const j = await performBatchAction('/api/admin/tasks/unexport-matching');
+                if (j) { alert('已重置导出状态 ' + (j.unexported || 0) + ' 个任务'); loadTasks(1); }
+            });
+
             // 注：导出匹配任务功能已移除
 
             // 文件名模糊查询

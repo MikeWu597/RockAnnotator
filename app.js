@@ -722,6 +722,77 @@ app.delete('/api/admin/tasks/:id', isAuthenticated, async (req, res) => {
   }
 });
 
+// 管理员：删除匹配条件的所有任务（基于 status 和 filename，忽略分页）
+app.post('/api/admin/tasks/delete-matching', isAuthenticated, async (req, res) => {
+  try {
+    const status = req.query.status || null;
+    const filename = req.query.filename || null;
+    const ids = await dbManager.getAnnotationTaskIds(status, filename);
+    if (!ids || ids.length === 0) return res.json({ success: true, deleted: 0 });
+
+    let deletedCount = 0;
+    for (const id of ids) {
+      try {
+        const result = await dbManager.deleteAnnotationTaskById(id);
+        if (result && result.filename) {
+          const filePath = path.join(__dirname, 'uploads', result.filename);
+          try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch(_) {}
+        }
+        deletedCount++;
+      } catch (e) {
+        console.warn('Failed to delete task', id, e.message || e);
+      }
+    }
+
+    res.json({ success: true, deleted: deletedCount });
+  } catch (err) {
+    console.error('Error deleting matching tasks:', err);
+    res.status(500).json({ success: false, error: err.message || '删除失败' });
+  }
+});
+
+// 管理员：重置匹配任务的标注（删除 annotations 并将任务置为 pending）
+app.post('/api/admin/tasks/reset-matching', isAuthenticated, async (req, res) => {
+  try {
+    const status = req.query.status || null;
+    const filename = req.query.filename || null;
+    const ids = await dbManager.getAnnotationTaskIds(status, filename);
+    if (!ids || ids.length === 0) return res.json({ success: true, reset: 0 });
+
+    let resetCount = 0;
+    for (const id of ids) {
+      try {
+        await dbManager.deleteAnnotationsByTaskId(id);
+        await dbManager.resetTaskToPending(id);
+        resetCount++;
+      } catch (e) {
+        console.warn('Failed to reset task', id, e.message || e);
+      }
+    }
+
+    res.json({ success: true, reset: resetCount });
+  } catch (err) {
+    console.error('Error resetting matching tasks:', err);
+    res.status(500).json({ success: false, error: err.message || '重置失败' });
+  }
+});
+
+// 管理员：重置匹配任务的导出状态（exported = 0）
+app.post('/api/admin/tasks/unexport-matching', isAuthenticated, async (req, res) => {
+  try {
+    const status = req.query.status || null;
+    const filename = req.query.filename || null;
+    const ids = await dbManager.getAnnotationTaskIds(status, filename);
+    if (!ids || ids.length === 0) return res.json({ success: true, unexported: 0 });
+
+    const changes = await dbManager.markTasksUnexported(ids);
+    res.json({ success: true, unexported: changes });
+  } catch (err) {
+    console.error('Error unexporting matching tasks:', err);
+    res.status(500).json({ success: false, error: err.message || '重置导出失败' });
+  }
+});
+
 // 管理员：重置任务（删除标注信息并重置为 pending）
 app.post('/api/admin/tasks/:id/reset', isAuthenticated, async (req, res) => {
   try {
