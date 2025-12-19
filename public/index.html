@@ -95,7 +95,7 @@
         </div>
     </div>
     
-    <div id="main-content" style="display: none;">
+    <div id="main-content">
         <div id="canvas-container">
             <canvas id="imageCanvas"></canvas>
         </div>
@@ -391,10 +391,9 @@
                 loadingElement.innerHTML = message;
                 loadingElement.style.display = 'block';
             }
-            const mainContentElement = document.getElementById('main-content');
-            if (mainContentElement) {
-                mainContentElement.style.display = 'none';
-            }
+            // 保持 main-content 可见，避免隐藏工具栏（只更新 loading 内容）
+            // const mainContentElement = document.getElementById('main-content');
+            // if (mainContentElement) { mainContentElement.style.display = 'none'; }
         }
         
         // 显示错误消息
@@ -429,10 +428,9 @@
                         </div>
                     `;
                 }
-                
-                if (mainContentElement) {
-                    mainContentElement.style.display = 'none';
-                }
+
+                // 不要隐藏 main-content，保持工具栏可见（仅显示 loading 提示）
+                // if (mainContentElement) { mainContentElement.style.display = 'none'; }
                 
                 // 创建新的图片对象
                 const img = new Image();
