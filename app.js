@@ -7,6 +7,7 @@ const SQLiteStore = require('connect-sqlite3')(session);
 const multer = require('multer');
 const { imageSize } = require('image-size');
 const fs = require('fs');
+const { exportDrSong } = require('./scripts/dr_song_engine');
 
 // 加载配置文件
 const config = YAML.load(path.join(__dirname, 'config.yml'));
@@ -22,6 +23,8 @@ app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 // 设置静态资源目录
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// 提供下载目录静态访问
+app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 
 // 配置multer用于文件上传
 const storage = multer.diskStorage({
@@ -176,6 +179,46 @@ app.get('/admin/upload', isAuthenticated, (req, res) => {
 // 标注任务页面
 app.get('/admin/tasks', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin', 'tasks.html'));
+});
+
+// 数据导出页面
+app.get('/admin/export', isAuthenticated, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin', 'export.html'));
+});
+
+// 管理员：数据导出（Dr. Song JSON 格式）
+app.get('/api/admin/export', isAuthenticated, async (req, res) => {
+  try {
+    const start = req.query.start || null; // ISO
+    const end = req.query.end || null;     // ISO
+
+    const uploadsDir = path.join(__dirname, 'uploads');
+    const downloadsDir = path.join(__dirname, 'downloads');
+    const tmpRootDir = path.join(__dirname, 'tmp');
+
+    // 确保目录存在
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+    if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true });
+    if (!fs.existsSync(tmpRootDir)) fs.mkdirSync(tmpRootDir, { recursive: true });
+
+    const zipAbsPath = await exportDrSong({
+      dbManager,
+      startISO: start,
+      endISO: end,
+      uploadsDir,
+      downloadsDir,
+      tmpRootDir
+    });
+
+    // 将绝对路径转换为可下载 URL 路径
+    const zipFileName = path.basename(zipAbsPath);
+    const zipUrlPath = `/downloads/${zipFileName}`;
+
+    res.json({ success: true, data: { zipPath: zipUrlPath } });
+  } catch (error) {
+    console.error('Export error:', error);
+    res.status(500).json({ success: false, error: error.message || '导出失败' });
+  }
 });
 
 // 处理单个图片上传的API

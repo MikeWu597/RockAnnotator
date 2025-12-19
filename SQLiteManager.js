@@ -376,6 +376,43 @@ class SQLiteManager {
     }
 
     /**
+     * 获取时间范围内完成的任务（含图片信息）
+     */
+    getCompletedTasksInRange(startISO, endISO) {
+        return new Promise((resolve, reject) => {
+            let sql = `
+                SELECT 
+                    at.id,
+                    at.status,
+                    at.created_at,
+                    at.completed_at,
+                    i.filename,
+                    i.width,
+                    i.height
+                FROM annotation_tasks at
+                JOIN images i ON at.image_id = i.id
+                WHERE at.status = 'completed'
+            `;
+
+            const params = [];
+            if (startISO) {
+                sql += ` AND datetime(at.completed_at) >= datetime(?)`;
+                params.push(startISO);
+            }
+            if (endISO) {
+                sql += ` AND datetime(at.completed_at) <= datetime(?)`;
+                params.push(endISO);
+            }
+            sql += ' ORDER BY at.completed_at ASC';
+
+            this.db.all(sql, params, (err, rows) => {
+                if (err) return reject(err);
+                resolve(rows || []);
+            });
+        });
+    }
+
+    /**
      * 获取随机待标注任务
      */
     getRandomPendingTask() {
