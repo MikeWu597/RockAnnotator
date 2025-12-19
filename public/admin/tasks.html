@@ -32,22 +32,23 @@
                     <div class="card-body">
                         <div class="row align-items-center">
                             <div class="col-md-3">
-                                <label for="statusFilter" class="form-label">任务状态</label>
-                                <select class="form-select" id="statusFilter">
-                                    <option value="">全部状态</option>
-                                    <option value="pending">待标注</option>
-                                    <option value="completed">已标注</option>
-                                </select>
-                            </div>
-                            
-                            <div class="col-md-3">
-                                <label for="pageSize" class="form-label">每页显示</label>
-                                <select class="form-select" id="pageSize">
-                                    <option value="10">10条</option>
-                                    <option value="20">20条</option>
-                                    <option value="50">50条</option>
-                                    <option value="100">100条</option>
-                                </select>
+                                <div class="mb-3">
+                                    <label for="statusFilter" class="form-label">任务状态</label>
+                                    <select class="form-select" id="statusFilter">
+                                        <option value="">全部状态</option>
+                                        <option value="pending">待标注</option>
+                                        <option value="completed">已标注</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="pageSize" class="form-label">每页显示</label>
+                                    <select class="form-select" id="pageSize">
+                                        <option value="10">10条</option>
+                                        <option value="20">20条</option>
+                                        <option value="50">50条</option>
+                                        <option value="100">100条</option>
+                                    </select>
+                                </div>
                             </div>
                             <div class="col-md-3">
                                 <label for="filenameSearch" class="form-label">按文件名模糊查询</label>
@@ -66,6 +67,7 @@
                                 <button id="refreshBtn" class="btn btn-outline-primary mt-4">
                                     <i class="fas fa-sync-alt me-1"></i>刷新
                                 </button>
+                                <!-- 已移除“导出匹配任务”功能 -->
                             </div>
                         </div>
                     </div>
@@ -209,6 +211,8 @@
             document.getElementById('refreshBtn').addEventListener('click', function() {
                 loadTasks(currentPage);
             });
+
+            // 注：导出匹配任务功能已移除
 
             // 文件名模糊查询
             const filenameInput = document.getElementById('filenameSearch');

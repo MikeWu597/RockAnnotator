@@ -554,6 +554,35 @@ class SQLiteManager {
     }
 
     /**
+     * 获取匹配条件的所有任务 ID（不分页），用于批量导出 selection
+     */
+    getAnnotationTaskIds(status = null, filename = null) {
+        return new Promise((resolve, reject) => {
+            let sql = `SELECT at.id FROM annotation_tasks at JOIN images i ON at.image_id = i.id`;
+            const clauses = [];
+            const params = [];
+
+            if (status) {
+                clauses.push('at.status = ?');
+                params.push(status);
+            }
+            if (filename) {
+                clauses.push("lower(i.filename) LIKE '%' || lower(?) || '%'");
+                params.push(filename);
+            }
+
+            if (clauses.length > 0) sql += ' WHERE ' + clauses.join(' AND ');
+            sql += ' ORDER BY at.id DESC';
+
+            this.db.all(sql, params, (err, rows) => {
+                if (err) return reject(err);
+                const ids = (rows || []).map(r => r.id);
+                resolve(ids);
+            });
+        });
+    }
+
+    /**
      * 获取标注任务总数
      */
     getAnnotationTasksCount(status = null, filename = null) {

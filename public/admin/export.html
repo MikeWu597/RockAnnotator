@@ -60,12 +60,15 @@
                                     </label>
                                 </div>
                             </div>
+
+                            <div class="col-12">
+                                <label for="exportFilename" class="form-label">按文件名模糊匹配</label>
+                                <input id="exportFilename" class="form-control" placeholder="输入文件名关键词，支持模糊匹配（可选）" />
+                                <div class="form-text">若填写，将只导出文件名包含该关键词的任务。</div>
+                            </div>
                         </div>
 
-                        <div class="mt-3 text-muted small">
-                            <i class="fas fa-info-circle me-1"></i>
-                            时间使用本地时区；导出时将转换为 ISO UTC（后端可按需解析）。
-                        </div>
+                        <!-- 说明已移至下方的导出说明列表（exportNotes），由 renderExportNotes 渲染 -->
 
                         <div class="mt-4 d-flex">
                             <button id="exportBtn" class="btn btn-primary">
@@ -232,6 +235,22 @@
             liScope.textContent = '导出范围以任务完成时间为准（已标注）。';
             ul.appendChild(liScope);
 
+            // 基于导出引擎的详细说明
+            const expl = [
+                '导出流程将对每张图片执行以下操作：',
+                '图片统一转为 JPG（质量 95）并以 UUID 命名；为每张图片生成一个 JSON（包含 base64 编码的 imageData，及标注多边形信息）。',
+                '根据 JSON 中 label 为 "liexi" 的多边形生成对应的二值掩码 PNG（多边形区域填充为白色）。',
+                '所有生成文件将打包为 ZIP。',
+                '导出完成后，已处理的任务会被标记为已导出（exported=1）。如需仅导出未导出任务，请勾选「仅导出未导出任务」。'
+            ];
+
+            expl.forEach(n => {
+                const li = document.createElement('li');
+                li.textContent = n;
+                ul.appendChild(li);
+            });
+
+            // 补充默认格式说明（如有）
             const notes = exportNotesMap[format] || [];
             notes.forEach(n => {
                 const li = document.createElement('li');
@@ -242,26 +261,35 @@
 
         async function doExport() {
             clearAlert();
-            const startVal = document.getElementById('startTime').value;
-            const endVal = document.getElementById('endTime').value;
-
-            if (!startVal || !endVal) {
-                setAlert('warning', '请先选择开始和结束时间');
-                return;
-            }
-            const start = new Date(startVal);
-            const end = new Date(endVal);
-            if (isNaN(start) || isNaN(end)) {
-                setAlert('danger', '时间格式无效，请重新选择');
-                return;
-            }
-            if (start > end) {
-                setAlert('warning', '开始时间不能晚于结束时间');
-                return;
-            }
-
             const onlyUnexported = document.getElementById('onlyUnexported').checked ? '1' : '0';
-            const params = new URLSearchParams({ start: toISO(startVal), end: toISO(endVal), onlyUnexported });
+            // 如果页面带有选中 ids，则以 ids 为准导出
+            const selectedIds = window.__export_selected_ids || null;
+            let params;
+            if (selectedIds) {
+                params = new URLSearchParams({ ids: selectedIds, onlyUnexported });
+            } else {
+                const startVal = document.getElementById('startTime').value;
+                const endVal = document.getElementById('endTime').value;
+
+                if (!startVal || !endVal) {
+                    setAlert('warning', '请先选择开始和结束时间');
+                    return;
+                }
+                const start = new Date(startVal);
+                const end = new Date(endVal);
+                if (isNaN(start) || isNaN(end)) {
+                    setAlert('danger', '时间格式无效，请重新选择');
+                    return;
+                }
+                if (start > end) {
+                    setAlert('warning', '开始时间不能晚于结束时间');
+                    return;
+                }
+
+                const filename = (document.getElementById('exportFilename') && document.getElementById('exportFilename').value) ? document.getElementById('exportFilename').value.trim() : '';
+                params = new URLSearchParams({ start: toISO(startVal), end: toISO(endVal), onlyUnexported });
+                if (filename) params.append('filename', filename);
+            }
 
             toggleLoading(true);
             try {
@@ -305,7 +333,9 @@
             }
 
             const onlyUnexported = document.getElementById('onlyUnexported').checked ? '1' : '0';
+            const filename = (document.getElementById('exportFilename') && document.getElementById('exportFilename').value) ? document.getElementById('exportFilename').value.trim() : '';
             const params = new URLSearchParams({ start: toISO(startVal), end: toISO(endVal), onlyUnexported });
+            if (filename) params.append('filename', filename);
 
             try {
                 const resp = await fetch(`/api/admin/export/preview?${params.toString()}`);
@@ -398,6 +428,21 @@
         }
 
         document.addEventListener('DOMContentLoaded', function() {
+            // 如果 URL 带有 ids 参数（由任务列表导出按钮传入），则使用该集合导出
+            const urlParams = new URLSearchParams(window.location.search);
+            const idsParam = urlParams.get('ids');
+            if (idsParam) {
+                // 将 ids 展示在界面上并禁用时间选择
+                const idsCount = idsParam.split(',').filter(Boolean).length;
+                setAlert('info', `将导出 ${idsCount} 个任务（按选中任务列表），时间选项被忽略。`);
+                document.getElementById('startTime').disabled = true;
+                document.getElementById('endTime').disabled = true;
+                // 禁用按文件名匹配输入（导出以 ids 为准）
+                const fnEl = document.getElementById('exportFilename');
+                if (fnEl) fnEl.disabled = true;
+                // 把 ids 保存在全局变量以便 doExport 使用
+                window.__export_selected_ids = idsParam;
+            }
             document.getElementById('exportBtn').addEventListener('click', doExport);
             document.getElementById('previewBtn').addEventListener('click', doPreview);
             document.getElementById('quickToday').addEventListener('click', () => setQuickRange('today'));

@@ -197,6 +197,8 @@ app.get('/api/admin/export', isAuthenticated, async (req, res) => {
   try {
     const start = req.query.start || null; // ISO
     const end = req.query.end || null;     // ISO
+    const idsParam = req.query.ids || null; // comma separated ids (optional)
+    const filename = req.query.filename || null;
 
     const uploadsDir = path.join(__dirname, 'uploads');
     const downloadsDir = path.join(__dirname, 'downloads');
@@ -247,7 +249,9 @@ app.get('/api/admin/export', isAuthenticated, async (req, res) => {
       uploadsDir,
       downloadsDir,
       tmpRootDir,
-      onlyUnexported
+      onlyUnexported,
+      taskIds: idsParam ? idsParam.split(',').map(s => parseInt(s)).filter(n => Number.isFinite(n)) : null,
+      filename: filename
     });
 
     // 将绝对路径转换为可下载 URL 路径
@@ -273,6 +277,8 @@ app.get('/api/admin/export/preview', isAuthenticated, async (req, res) => {
   try {
     const start = req.query.start || null; // ISO or local
     const end = req.query.end || null;
+    const idsParam = req.query.ids || null;
+    const filename = req.query.filename || null;
 
     // parseToUTCISO 重复逻辑与导出接口一致
     function parseToUTCISO(input) {
@@ -302,10 +308,27 @@ app.get('/api/admin/export/preview', isAuthenticated, async (req, res) => {
     const onlyUnexported = req.query.onlyUnexported === '1' || req.query.onlyUnexported === 'true';
 
     let tasks = [];
-    if (onlyUnexported) {
+    if (idsParam) {
+      const ids = idsParam.split(',').map(s => parseInt(s)).filter(n => Number.isFinite(n));
+      for (const id of ids) {
+        const t = await dbManager.getAnnotationTaskById(id).catch(()=>null);
+        if (t) tasks.push(t);
+      }
+      // 如果传入了 filename，也应用模糊过滤
+      if (filename) {
+        const key = filename.toLowerCase();
+        tasks = tasks.filter(t => t && t.filename && t.filename.toLowerCase().includes(key));
+      }
+    } else if (onlyUnexported) {
       tasks = await dbManager.getUnexportedCompletedTasksInRange(startISO, endISO);
     } else {
       tasks = await dbManager.getCompletedTasksInRange(startISO, endISO);
+    }
+
+    // 对于按时间范围获取的任务，若提供了 filename 参数，则进行模糊匹配过滤
+    if (!idsParam && filename) {
+      const key = filename.toLowerCase();
+      tasks = (tasks || []).filter(t => t && t.filename && t.filename.toLowerCase().includes(key));
     }
 
     res.json({ success: true, data: tasks });
@@ -563,6 +586,9 @@ app.get('/api/admin/tasks', isAuthenticated, async (req, res) => {
   }
 });
 
+// 管理员：根据筛选条件获取所有匹配任务的 id（不分页，用于导出选择）
+// (已移至 /api/admin/tasks 路由之后，避免被 /:id 劫持)
+
 // 获取单个标注任务详情的API
 app.get('/api/admin/tasks/:id', isAuthenticated, async (req, res) => {
   try {
@@ -777,6 +803,9 @@ app.get('/api/annotator/annotations', isAnnotatorAuthenticated, async (req, res)
     res.status(500).json({ success: false, error: err.message || '查询失败' });
   }
 });
+
+// 管理员：根据筛选条件获取所有匹配任务的 id（不分页，用于导出选择）
+// /api/admin/tasks/ids 路由已移除，应删除相关前端导出匹配任务功能
 
 // 获取随机待标注任务的API（分配锁定给当前标注员）
 app.get('/api/tasks/random', isAnnotatorAuthenticated, async (req, res) => {

@@ -133,7 +133,7 @@ async function buildOneLabelmeJson({ task, annotations, destImgPath, uuidName })
   return json;
 }
 
-async function exportDrSong({ dbManager, startISO, endISO, uploadsDir, downloadsDir, tmpRootDir, onlyUnexported = true }) {
+async function exportDrSong({ dbManager, startISO, endISO, uploadsDir, downloadsDir, tmpRootDir, onlyUnexported = true, taskIds = null, filename = null }) {
   ensureDir(downloadsDir);
   ensureDir(tmpRootDir);
 
@@ -142,13 +142,33 @@ async function exportDrSong({ dbManager, startISO, endISO, uploadsDir, downloads
   const tmpDir = path.join(tmpRootDir, `export-${batchId}`);
   ensureDir(tmpDir);
 
-  try {
-    // 根据 onlyUnexported 决定查询未导出或全部已完成任务
+    try {
+    // 如果传入了 taskIds，则只导出这些任务（顺序按传入顺序）
     let tasks = [];
-    if (onlyUnexported) {
-      tasks = await dbManager.getUnexportedCompletedTasksInRange(startISO, endISO);
+    if (Array.isArray(taskIds) && taskIds.length > 0) {
+      for (const id of taskIds) {
+        try {
+          const t = await dbManager.getAnnotationTaskById(id);
+          if (t) tasks.push(t);
+        } catch (e) { /* skip */ }
+      }
+      // 若提供了 filename，对按 ids 选出的任务再做模糊匹配过滤
+      if (filename) {
+        const key = filename.toString().toLowerCase();
+        tasks = tasks.filter(t => t && t.filename && t.filename.toLowerCase().includes(key));
+      }
     } else {
-      tasks = await dbManager.getCompletedTasksInRange(startISO, endISO);
+      // 根据 onlyUnexported 决定查询未导出或全部已完成任务
+      if (onlyUnexported) {
+        tasks = await dbManager.getUnexportedCompletedTasksInRange(startISO, endISO);
+      } else {
+        tasks = await dbManager.getCompletedTasksInRange(startISO, endISO);
+      }
+      // 应用 filename 模糊匹配（如提供）
+      if (filename) {
+        const key = filename.toString().toLowerCase();
+        tasks = (tasks || []).filter(t => t && t.filename && t.filename.toLowerCase().includes(key));
+      }
     }
     if (!tasks || tasks.length === 0) {
       // 空结果：也打包空 zip，保持流程一致
@@ -161,14 +181,26 @@ async function exportDrSong({ dbManager, startISO, endISO, uploadsDir, downloads
     }
 
     const processedTaskIds = [];
+    // 为保持原始文件名，使用源文件名（去扩展名）作为导出基名；若出现重复则追加序号避免覆盖
+    const nameCounts = Object.create(null);
     for (const task of tasks) {
       const srcPath = path.join(uploadsDir, task.filename);
       if (!fs.existsSync(srcPath)) {
         // 跳过缺失的源文件
         continue;
       }
-      const uuidName = uuidv4();
-      const destStem = path.join(tmpDir, uuidName);
+
+      // 取得原始文件名（不含扩展名），并做简单清理以避免非法字符
+      const parsed = path.parse(task.filename || 'file');
+      const rawBase = (parsed.name || 'file').toString();
+      let safeBase = rawBase.replace(/[^a-zA-Z0-9._\-]/g, '_');
+
+      // 如果已存在相同基名，追加序号
+      if (!nameCounts[safeBase]) nameCounts[safeBase] = 0;
+      nameCounts[safeBase] += 1;
+      const outBase = nameCounts[safeBase] === 1 ? safeBase : `${safeBase}_${nameCounts[safeBase]}`;
+
+      const destStem = path.join(tmpDir, outBase);
       const destImgPath = await processImageToTemp(srcPath, destStem);
 
       // 读取标注
@@ -177,12 +209,12 @@ async function exportDrSong({ dbManager, startISO, endISO, uploadsDir, downloads
         anns = await dbManager.getAnnotationsByTaskId(task.id);
       } catch (_) {}
 
-      const json = await buildOneLabelmeJson({ task, annotations: anns, destImgPath, uuidName });
-      const jsonPath = path.join(tmpDir, `${uuidName}.json`);
+      const json = await buildOneLabelmeJson({ task, annotations: anns, destImgPath, uuidName: outBase });
+      const jsonPath = path.join(tmpDir, `${outBase}.json`);
       fs.writeFileSync(jsonPath, JSON.stringify(json, null, 2), 'utf-8');
       // 为该 JSON 生成二值掩码（将 label 为 'liexi' 的多边形区域填充为 255）
       try {
-        await generateMaskFromLabelmeJson(jsonPath, path.join(tmpDir, `${uuidName}.png`));
+        await generateMaskFromLabelmeJson(jsonPath, path.join(tmpDir, `${outBase}.png`));
       } catch (e) {
         console.warn('生成掩码失败 for', jsonPath, e.message || e);
       }
