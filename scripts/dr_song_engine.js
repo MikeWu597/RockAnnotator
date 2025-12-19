@@ -41,6 +41,66 @@ function fileToBase64(filePath) {
   return buf.toString('base64');
 }
 
+// ---------- Mask 生成 ----------
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+function fillPolygonOnMask(mask, width, height, points) {
+  if (!points || points.length < 3) return;
+  // 使用扫描线算法；对每个像素行 y，计算与多边形边的交点
+  for (let y = 0; y < height; y++) {
+    const scanY = y + 0.5;
+    const xs = [];
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      const x1 = a[0], y1 = a[1];
+      const x2 = b[0], y2 = b[1];
+      if ((y1 > scanY) === (y2 > scanY)) continue;
+      const x = x1 + (scanY - y1) * (x2 - x1) / (y2 - y1);
+      xs.push(x);
+    }
+    if (xs.length === 0) continue;
+    xs.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      let xStart = Math.ceil(xs[k]);
+      let xEnd = Math.floor(xs[k + 1]);
+      xStart = clamp(xStart, 0, width - 1);
+      xEnd = clamp(xEnd, 0, width - 1);
+      if (xEnd < xStart) continue;
+      let offset = y * width + xStart;
+      for (let xx = xStart; xx <= xEnd; xx++, offset++) {
+        mask[offset] = 255;
+      }
+    }
+  }
+}
+
+async function generateMaskFromLabelmeJson(jsonPath, outPngPath) {
+  const raw = fs.readFileSync(jsonPath, 'utf8');
+  const data = JSON.parse(raw);
+  const w = data.imageWidth || (data.imageShape && data.imageShape.width) || 0;
+  const h = data.imageHeight || (data.imageShape && data.imageShape.height) || 0;
+  if (!w || !h) throw new Error('Missing imageWidth/imageHeight in json');
+  const mask = new Uint8Array(w * h);
+  const shapes = Array.isArray(data.shapes) ? data.shapes : [];
+  for (const s of shapes) {
+    const label = (s.label || '').toString();
+    if (label !== 'liexi') continue;
+    const pts = Array.isArray(s.points) ? s.points.map(p => [Number(p[0]), Number(p[1])]) : [];
+    if (pts.length >= 3) fillPolygonOnMask(mask, w, h, pts);
+  }
+
+  // 转为 RGBA Buffer 写出 PNG
+  const rgba = Buffer.alloc(w * h * 4);
+  for (let i = 0; i < w * h; i++) {
+    const v = mask[i];
+    const base = i * 4;
+    rgba[base] = v; rgba[base + 1] = v; rgba[base + 2] = v; rgba[base + 3] = 255;
+  }
+  const img = await Jimp.read({ data: rgba, width: w, height: h });
+  await img.writeAsync(outPngPath);
+}
+
 async function buildOneLabelmeJson({ task, annotations, destImgPath, uuidName }) {
   const jimg = await Jimp.read(destImgPath);
   const dim = { width: jimg.bitmap.width, height: jimg.bitmap.height };
@@ -120,10 +180,15 @@ async function exportDrSong({ dbManager, startISO, endISO, uploadsDir, downloads
       const json = await buildOneLabelmeJson({ task, annotations: anns, destImgPath, uuidName });
       const jsonPath = path.join(tmpDir, `${uuidName}.json`);
       fs.writeFileSync(jsonPath, JSON.stringify(json, null, 2), 'utf-8');
+      // 为该 JSON 生成二值掩码（将 label 为 'liexi' 的多边形区域填充为 255）
+      try {
+        await generateMaskFromLabelmeJson(jsonPath, path.join(tmpDir, `${uuidName}.png`));
+      } catch (e) {
+        console.warn('生成掩码失败 for', jsonPath, e.message || e);
+      }
       processedTaskIds.push(task.id);
     }
 
-    // 压缩临时目录
     const zipName = `export_${batchId}.zip`;
     const zipPath = path.join(downloadsDir, zipName);
     const zip = new AdmZip();
