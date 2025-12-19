@@ -759,29 +759,18 @@ app.get('/api/annotator/annotations', isAnnotatorAuthenticated, async (req, res)
     const annotator = req.session.annotator;
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 20;
+    // 为了在API层按 taskId 去重（相同任务多次保存只显示最新一次），先计算总的去重任务数
+    const totalUnique = await dbManager.getUniqueAnnotatedTaskCount(annotator.id);
 
-    const annotations = await dbManager.getAnnotationsByAnnotatorId(annotator.id, page, pageSize);
-    const total = await dbManager.getAnnotationsByAnnotatorCount(annotator.id);
+    // 获取截至本页的最新 unique 项，方便实现分页：请求前 page 页的条目数，然后切片返回本页
+    const fetchLimit = page * pageSize;
+    const latestUnique = await dbManager.getLatestUniqueAnnotationsByAnnotator(annotator.id, fetchLimit);
 
-    // 解析并附带 task filename
-    const enriched = [];
-    for (const a of annotations) {
-      let parsed = a.content;
-      if (typeof parsed === 'string') {
-        try { parsed = JSON.parse(parsed); } catch (e) { parsed = null; }
-      }
-      const taskId = parsed && (parsed.taskId || parsed.task_id) ? (parsed.taskId || parsed.task_id) : null;
-      let filename = null;
-      if (taskId) {
-        try {
-          const task = await dbManager.getAnnotationTaskById(taskId);
-          if (task && task.filename) filename = task.filename;
-        } catch (e) { /* ignore */ }
-      }
-      enriched.push({ id: a.id, created_at: a.created_at, parsedContent: parsed, taskId, filename });
-    }
+    // 从 latestUnique 中分页切片
+    const start = (page - 1) * pageSize;
+    const pageItems = latestUnique.slice(start, start + pageSize);
 
-    res.json({ success: true, data: { annotations: enriched, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } } });
+    res.json({ success: true, data: { annotations: pageItems, pagination: { page, pageSize, total: totalUnique, totalPages: Math.max(1, Math.ceil(totalUnique / pageSize)) } } });
   } catch (err) {
     console.error('Error fetching annotator annotations (self):', err);
     res.status(500).json({ success: false, error: err.message || '查询失败' });

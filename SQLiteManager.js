@@ -365,6 +365,80 @@ class SQLiteManager {
     }
 
     /**
+     * 获取指定标注员去重后的最新标注（按 taskId 去重，保留每个 task 的最新一条），限制条数
+     */
+    getLatestUniqueAnnotationsByAnnotator(annotatorId, limit = 5) {
+        return new Promise((resolve, reject) => {
+            // 先获取该 annotator 的最近若干条标注（按 id desc）以便在内存中按 taskId 去重
+            // 取 limit * 10 条作为候选，防止同一任务多次保存时无法凑足 limit 个不同任务
+            const candidateCount = Math.max(limit * 10, limit + 10);
+            const sql = `SELECT id, user_id, content, created_at FROM annotations WHERE user_id = ? ORDER BY id DESC LIMIT ?`;
+            this.db.all(sql, [annotatorId, candidateCount], (err, rows) => {
+                if (err) return reject(err);
+                try {
+                    const unique = [];
+                    const seen = new Set();
+                    for (const r of (rows || [])) {
+                        let parsed = r.content;
+                        if (typeof parsed === 'string') {
+                            try { parsed = JSON.parse(parsed); } catch (e) { parsed = null; }
+                        }
+                        const taskId = parsed && (parsed.taskId || parsed.task_id) ? (parsed.taskId || parsed.task_id) : null;
+                        const key = taskId !== null ? String(taskId) : (r.id ? `ann_${r.id}` : null);
+                        if (key && seen.has(key)) continue;
+                        if (key) seen.add(key);
+                        unique.push({ id: r.id, created_at: r.created_at, parsedContent: parsed, taskId, filename: null });
+                        if (unique.length >= limit) break;
+                    }
+
+                    // 为每个 unique 项补上 filename（如果有 taskId）
+                    const pending = unique.map(u => {
+                        if (!u.taskId) return Promise.resolve(u);
+                        return new Promise((res) => {
+                            const sql2 = `SELECT i.filename FROM annotation_tasks at JOIN images i ON at.image_id = i.id WHERE at.id = ? LIMIT 1`;
+                            this.db.get(sql2, [u.taskId], (err2, row2) => {
+                                if (!err2 && row2 && row2.filename) u.filename = row2.filename;
+                                res(u);
+                            });
+                        });
+                    });
+
+                    Promise.all(pending).then(results => resolve(results)).catch(reject);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        });
+    }
+
+    /**
+     * 统计指定标注员去重后的任务数（按 taskId 去重）
+     */
+    getUniqueAnnotatedTaskCount(annotatorId) {
+        return new Promise((resolve, reject) => {
+            const sql = `SELECT content FROM annotations WHERE user_id = ? ORDER BY id DESC`;
+            this.db.all(sql, [annotatorId], (err, rows) => {
+                if (err) return reject(err);
+                try {
+                    const seen = new Set();
+                    for (const r of (rows || [])) {
+                        let parsed = r.content;
+                        if (typeof parsed === 'string') {
+                            try { parsed = JSON.parse(parsed); } catch (e) { parsed = null; }
+                        }
+                        const taskId = parsed && (parsed.taskId || parsed.task_id) ? (parsed.taskId || parsed.task_id) : null;
+                        const key = taskId !== null ? String(taskId) : null;
+                        if (key) seen.add(key);
+                    }
+                    resolve(seen.size);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        });
+    }
+
+    /**
      * 插入图片信息
      */
     insertImage(filename, width, height) {

@@ -103,22 +103,22 @@
         <div id="toolbar">
             <div class="toolbar-item">
                 <button id="zoomInBtn" class="btn btn-sm btn-outline-primary" title="放大">
-                    <i class="fas fa-search-plus"></i>
+                    <i class="fas fa-search-plus"></i> 放大
                 </button>
             </div>
             <div class="toolbar-item">
                 <button id="zoomOutBtn" class="btn btn-sm btn-outline-primary" title="缩小">
-                    <i class="fas fa-search-minus"></i>
+                    <i class="fas fa-search-minus"></i> 缩小
                 </button>
             </div>
             <div class="toolbar-item">
                 <button id="resetViewBtn" class="btn btn-sm btn-outline-secondary" title="重置视图">
-                    <i class="fas fa-expand"></i>
+                    <i class="fas fa-expand"></i> 铺满
                 </button>
             </div>
             <div class="toolbar-item">
                 <button id="clearPolygonBtn" class="btn btn-sm btn-outline-warning" title="清除当前多边形">
-                    <i class="fas fa-undo"></i>
+                    <i class="fas fa-undo"></i> 撤销
                 </button>
             </div>
             <div class="toolbar-item">
@@ -127,10 +127,20 @@
                 </button>
             </div>
             <div class="toolbar-item">
-                <div id="annotatorName" style="font-size:12px;color:#333;max-width:160px;word-break:break-all;"></div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <div id="annotatorIcon" style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:#333;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8V22h19.2v-2.8c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+                    </div>
+                    <div id="annotatorName" style="font-size:12px;color:#333;max-width:140px;word-break:break-all;"></div>
+                </div>
             </div>
             <div class="toolbar-item">
-                <div id="annotatorThumbs" style="display:flex;flex-direction:column;gap:6px;overflow-y:auto;max-height:320px;width:84px;padding-top:6px;"></div>
+                <div id="annotatorThumbs" style="display:flex;flex-direction:column;gap:6px;overflow-y:visible;max-height:none;width:64px;padding-top:6px;"></div>
+            </div>
+            <div class="toolbar-item">
+                <button id="logoutBtn" class="btn btn-sm btn-outline-danger" title="退出登录">
+                    <i class="fas fa-sign-out-alt"></i> 退出
+                </button>
             </div>
         </div>
         
@@ -261,8 +271,19 @@
                 container.innerHTML = '';
                 if (!resp.ok || !j || !j.success) return;
                 const list = (j.data && j.data.annotations) || [];
-                list.forEach(item => {
-                    if (!item || !item.filename) return;
+                // 去重：按 taskId 去重，保留列表中最先出现（服务器通常按时间降序返回最新的在前）
+                const unique = [];
+                const seen = new Set();
+                for (const item of list) {
+                    if (!item || !item.filename) continue;
+                    const key = (item.taskId !== undefined && item.taskId !== null) ? String(item.taskId) : (item.filename || '');
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    unique.push(item);
+                    if (unique.length >= 5) break; // 只保留最多 5 个
+                }
+
+                unique.forEach(item => {
                     const wrapper = document.createElement('div');
                     wrapper.style.display = 'flex';
                     wrapper.style.flexDirection = 'column';
@@ -271,8 +292,8 @@
 
                     const img = document.createElement('img');
                     img.src = '/uploads/' + encodeURI(item.filename);
-                    img.style.width = '72px';
-                    img.style.height = '72px';
+                    img.style.width = '56px';
+                    img.style.height = '56px';
                     img.style.objectFit = 'cover';
                     img.style.border = '1px solid rgba(0,0,0,0.08)';
                     img.alt = `任务 ${item.taskId}`;
@@ -280,7 +301,7 @@
                     const time = document.createElement('small');
                     time.style.fontSize = '10px';
                     time.style.color = '#666';
-                    time.textContent = new Date(item.created_at).toLocaleTimeString();
+                    time.textContent = item.created_at ? new Date(item.created_at).toLocaleTimeString() : '';
 
                     wrapper.addEventListener('click', function(){ if (item.taskId) loadTaskForEditing(item.taskId); });
                     wrapper.appendChild(img);
@@ -708,6 +729,7 @@
             document.getElementById('resetViewBtn').addEventListener('click', resetView);
             document.getElementById('clearPolygonBtn').addEventListener('click', clearCurrentPolygon);
             document.getElementById('saveBtn').addEventListener('click', saveAndLoadNew);
+            try { const lb = document.getElementById('logoutBtn'); if (lb) lb.addEventListener('click', () => { window.location.href = '/annotator/logout'; }); } catch(e) {}
 
             // 加载可用标签列表
             loadAvailableTags();
