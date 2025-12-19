@@ -1179,29 +1179,30 @@
             }
         }
 
-        // 显示标签选择弹窗，返回 Promise resolved with tag name 或 null
+        // 显示标签选择弹窗（定位到最近鼠标位置），返回 Promise resolved with tag name 或 null
         function showTagPicker() {
             return new Promise((resolve) => {
-                // 创建简单的 modal 内容
                 const modalId = 'tagPickerModal';
                 let modal = document.getElementById(modalId);
-                if (!modal) {
-                    modal = document.createElement('div');
-                    modal.id = modalId;
-                    modal.className = 'modal show';
-                    modal.style.display = 'none';
-                    modal.innerHTML = `
-                        <div class="modal-dialog modal-sm" role="document">
-                            <div class="modal-content">
-                                <div class="modal-header"><h5 class="modal-title">选择标签</h5></div>
-                                <div class="modal-body" id="tagPickerBody"></div>
-                                <div class="modal-footer">
-                                    <button id="tagPickerCancel" class="btn btn-secondary">取消</button>
-                                </div>
+                if (modal) modal.remove();
+
+                modal = document.createElement('div');
+                modal.id = modalId;
+                modal.className = 'modal show';
+                modal.style.display = 'block';
+                // 半透明遮罩感觉会挡住点击，这里保持 modal 背景透明但捕获外部点击以关闭
+                modal.style.background = 'transparent';
+
+                modal.innerHTML = `
+                    <div class="modal-dialog modal-sm" role="document">
+                        <div class="modal-content">
+                            <div class="modal-body" id="tagPickerBody"></div>
+                            <div class="modal-footer">
+                                <button id="tagPickerCancel" class="btn btn-secondary">取消</button>
                             </div>
-                        </div>`;
-                    document.body.appendChild(modal);
-                }
+                        </div>
+                    </div>`;
+                document.body.appendChild(modal);
 
                 const body = modal.querySelector('#tagPickerBody');
                 body.innerHTML = '';
@@ -1211,10 +1212,11 @@
                 } else {
                     availableTags.forEach(tag => {
                         const btn = document.createElement('button');
-                        btn.className = 'btn btn-outline-primary m-1';
+                        btn.className = 'btn btn-outline-primary d-block w-100 mb-1';
                         btn.textContent = tag;
+                        btn.style.textAlign = 'left';
                         btn.addEventListener('click', () => {
-                            hideModal();
+                            closeModal();
                             resolve(tag);
                         });
                         body.appendChild(btn);
@@ -1222,13 +1224,38 @@
                 }
 
                 const cancelBtn = modal.querySelector('#tagPickerCancel');
-                cancelBtn.onclick = () => { hideModal(); resolve(null); };
+                cancelBtn.onclick = () => { closeModal(); resolve(null); };
 
-                function hideModal() {
-                    modal.style.display = 'none';
+                function closeModal() {
+                    try { modal.remove(); } catch (e) {}
                 }
 
-                modal.style.display = 'block';
+                // 把对话框定位到最近鼠标位置
+                try {
+                    const dialog = modal.querySelector('.modal-dialog');
+                    dialog.style.position = 'fixed';
+                    dialog.style.margin = '0';
+                    // 计算最近鼠标在页面上的 client 坐标
+                    let clientX = window.innerWidth / 2;
+                    let clientY = window.innerHeight / 2;
+                    if (typeof lastMouseCanvasX === 'number' && typeof lastMouseCanvasY === 'number') {
+                        const rect = canvas.getBoundingClientRect();
+                        clientX = rect.left + lastMouseCanvasX;
+                        clientY = rect.top + lastMouseCanvasY;
+                    }
+                    // 先放到该位置，然后用 translate(-50%,-50%) 让对话框以该点为中心
+                    dialog.style.left = clientX + 'px';
+                    dialog.style.top = clientY + 'px';
+                    dialog.style.transform = 'translate(-50%, -50%)';
+                    dialog.style.pointerEvents = 'auto';
+                } catch (e) { /* ignore positioning errors */ }
+
+                // 点击遮罩关闭（点击 modal 背景即认为取消）
+                modal.addEventListener('mousedown', function (ev) {
+                    const dialog = modal.querySelector('.modal-dialog');
+                    if (!dialog) return;
+                    if (!dialog.contains(ev.target)) { closeModal(); resolve(null); }
+                });
             });
         }
     </script>
