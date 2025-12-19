@@ -49,6 +49,25 @@ class SQLiteManager {
     }
 
     /**
+     * 根据导出记录ID删除记录，返回记录的 zip_path（如果存在）
+     */
+    deleteExportRecord(id) {
+        return new Promise((resolve, reject) => {
+            const sql = 'SELECT zip_path FROM export_records WHERE id = ?';
+            this.db.get(sql, [id], (err, row) => {
+                if (err) return reject(err);
+                if (!row) return resolve(null);
+                const zipPath = row.zip_path;
+                const del = 'DELETE FROM export_records WHERE id = ?';
+                this.db.run(del, [id], function(delErr) {
+                    if (delErr) return reject(delErr);
+                    resolve(zipPath);
+                });
+            });
+        });
+    }
+
+    /**
      * 初始化数据库连接
      */
     initialize() {

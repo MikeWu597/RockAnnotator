@@ -447,6 +447,29 @@ app.get('/api/admin/export/records', isAuthenticated, async (req, res) => {
   }
 });
 
+// 管理员：删除导出记录（同时删除服务器上的 zip 文件）
+app.delete('/api/admin/export/records/:id', isAuthenticated, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const zipUrl = await dbManager.deleteExportRecord(id);
+    if (!zipUrl) return res.status(404).json({ success: false, error: '记录未找到' });
+
+    // zipUrl 存储为 /downloads/<filename>
+    try {
+      const filename = path.basename(zipUrl);
+      const filePath = path.join(__dirname, 'downloads', filename);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch (fileErr) {
+      console.warn('Failed to delete zip file for export record', id, fileErr.message || fileErr);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting export record:', err);
+    res.status(500).json({ success: false, error: err.message || '删除失败' });
+  }
+});
+
 // 处理单个图片上传的API
 app.post('/api/admin/images/upload', isAuthenticated, singleUpload.single('image'), async (req, res) => {
   try {

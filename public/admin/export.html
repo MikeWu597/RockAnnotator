@@ -47,9 +47,9 @@
 
                             <div class="col-md-6 d-flex align-items-end">
                                 <div class="btn-group w-100">
-                                    <button id="quickToday" type="button" class="btn btn-outline-secondary">今天</button>
-                                    <button id="quick7" type="button" class="btn btn-outline-secondary">近7天</button>
-                                    <button id="quick30" type="button" class="btn btn-outline-secondary">近30天</button>
+                                    <button id="quickToday" type="button" class="btn btn-outline-secondary" data-label="今天">今天</button>
+                                    <button id="quick7" type="button" class="btn btn-outline-secondary" data-label="近7天">近7天</button>
+                                    <button id="quick30" type="button" class="btn btn-outline-secondary" data-label="近30天">近30天</button>
                                 </div>
                             </div>
                             <div class="col-12">
@@ -215,6 +215,25 @@
             };
             document.getElementById('startTime').value = fmt(start);
             document.getElementById('endTime').value = fmt(end);
+        }
+
+        // 更新快速选择按钮的外观，选中项显示为实色并带勾
+        function updateQuickButtons(selectedId) {
+            const ids = ['quickToday','quick7','quick30'];
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const label = el.getAttribute('data-label') || el.textContent.trim();
+                if (id === selectedId) {
+                    el.classList.remove('btn-outline-secondary');
+                    el.classList.add('btn-primary');
+                    el.innerHTML = `<i class="fas fa-check me-1"></i>${label}`;
+                } else {
+                    el.classList.remove('btn-primary');
+                    el.classList.add('btn-outline-secondary');
+                    el.innerHTML = label;
+                }
+            });
         }
 
         // 导出格式说明渲染
@@ -390,8 +409,31 @@
                 records.forEach(r => {
                     const tr = document.createElement('tr');
                     const time = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
-                    tr.innerHTML = `<td>${r.id}</td><td><a href="${r.zip_path}" target="_blank">${r.filename}</a></td><td>${time}</td><td><a class="btn btn-sm btn-outline-primary" href="${r.zip_path}" target="_blank">下载</a></td>`;
+                    tr.innerHTML = `<td>${r.id}</td><td><a href="${r.zip_path}" target="_blank">${r.filename}</a></td><td>${time}</td><td>
+                        <a class="btn btn-sm btn-outline-primary" href="${r.zip_path}" target="_blank">下载</a>
+                        <button class="btn btn-sm btn-outline-danger ms-1 delete-export" data-id="${r.id}">删除</button>
+                    </td>`;
                     tbody.appendChild(tr);
+                });
+
+                // 绑定删除导出记录按钮
+                document.querySelectorAll('.delete-export').forEach(btn => {
+                    btn.addEventListener('click', async function() {
+                        const id = this.getAttribute('data-id');
+                        if (!confirm('确认删除该导出记录并删除服务器上的 ZIP 文件吗？此操作不可撤销。')) return;
+                        try {
+                            const resp = await fetch(`/api/admin/export/records/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                            const j = await resp.json().catch(()=>null);
+                            if (!resp.ok || !j || !j.success) {
+                                alert('删除失败: ' + (j && j.error ? j.error : '未知错误'));
+                            } else {
+                                loadExportRecords(page);
+                            }
+                        } catch (e) {
+                            console.error(e);
+                            alert('网络错误，请稍后重试');
+                        }
+                    });
                 });
 
                 document.getElementById('recordsInfo').textContent = `共 ${pagination.total} 条，${pagination.page}/${pagination.totalPages} 页`;
@@ -445,12 +487,13 @@
             }
             document.getElementById('exportBtn').addEventListener('click', doExport);
             document.getElementById('previewBtn').addEventListener('click', doPreview);
-            document.getElementById('quickToday').addEventListener('click', () => setQuickRange('today'));
-            document.getElementById('quick7').addEventListener('click', () => setQuickRange(7));
-            document.getElementById('quick30').addEventListener('click', () => setQuickRange(30));
+            document.getElementById('quickToday').addEventListener('click', () => { setQuickRange('today'); updateQuickButtons('quickToday'); });
+            document.getElementById('quick7').addEventListener('click', () => { setQuickRange(7); updateQuickButtons('quick7'); });
+            document.getElementById('quick30').addEventListener('click', () => { setQuickRange(30); updateQuickButtons('quick30'); });
 
             // 默认选近7天
             setQuickRange(7);
+            updateQuickButtons('quick7');
             // 渲染默认（宋博士）导出格式说明
             renderExportNotes('drsong');
 
