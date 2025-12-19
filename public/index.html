@@ -243,6 +243,8 @@
                                     <p class="mt-3">暂无待标注任务</p>
                                 </div>
                             `);
+                            // 将 loading div 设置为 visible
+                            document.getElementById('loading').style.visibility = 'visible';
                         }
                     })
                     .catch(error => {
