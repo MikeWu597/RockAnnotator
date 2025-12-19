@@ -248,6 +248,13 @@ app.get('/api/admin/export', isAuthenticated, async (req, res) => {
     const zipFileName = path.basename(zipAbsPath);
     const zipUrlPath = `/downloads/${zipFileName}`;
 
+    // 记录导出记录到数据库，便于重复下载
+    try {
+      await dbManager.insertExportRecord(zipFileName, zipUrlPath);
+    } catch (recErr) {
+      console.warn('Failed to record export record:', recErr.message || recErr);
+    }
+
     res.json({ success: true, data: { zipPath: zipUrlPath } });
   } catch (error) {
     console.error('Export error:', error);
@@ -299,6 +306,33 @@ app.get('/api/admin/export/preview', isAuthenticated, async (req, res) => {
   } catch (error) {
     console.error('Preview error:', error);
     res.status(500).json({ success: false, error: error.message || '预览失败' });
+  }
+});
+
+// 管理员：获取导出记录（带分页）
+app.get('/api/admin/export/records', isAuthenticated, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.pageSize) || 10;
+
+    const records = await dbManager.getExportRecords(page, pageSize);
+    const total = await dbManager.getExportRecordsCount();
+
+    res.json({
+      success: true,
+      data: {
+        records,
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize)
+        }
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching export records:', err);
+    res.status(500).json({ success: false, error: err.message || '查询导出记录失败' });
   }
 });
 

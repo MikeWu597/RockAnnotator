@@ -9,6 +9,46 @@ class SQLiteManager {
     }
 
     /**
+     * 插入一条导出记录
+     */
+    insertExportRecord(filename, zipPath) {
+        return new Promise((resolve, reject) => {
+            const sql = "INSERT INTO export_records (filename, zip_path, created_at) VALUES (?, ?, datetime('now','localtime'))";
+            this.db.run(sql, [filename, zipPath], function(err) {
+                if (err) return reject(err);
+                resolve(this.lastID);
+            });
+        });
+    }
+
+    /**
+     * 获取导出记录（分页）
+     */
+    getExportRecords(page = 1, pageSize = 10) {
+        return new Promise((resolve, reject) => {
+            const offset = (page - 1) * pageSize;
+            const sql = `SELECT id, filename, zip_path, created_at FROM export_records ORDER BY id DESC LIMIT ? OFFSET ?`;
+            this.db.all(sql, [pageSize, offset], (err, rows) => {
+                if (err) return reject(err);
+                resolve(rows || []);
+            });
+        });
+    }
+
+    /**
+     * 获取导出记录总数
+     */
+    getExportRecordsCount() {
+        return new Promise((resolve, reject) => {
+            const sql = 'SELECT COUNT(*) as count FROM export_records';
+            this.db.get(sql, [], (err, row) => {
+                if (err) return reject(err);
+                resolve(row ? row.count : 0);
+            });
+        });
+    }
+
+    /**
      * 初始化数据库连接
      */
     initialize() {
@@ -95,6 +135,13 @@ class SQLiteManager {
                 CREATE TABLE IF NOT EXISTS tags (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT UNIQUE NOT NULL,
+                    created_at DATETIME DEFAULT (datetime('now','localtime'))
+                );
+                
+                CREATE TABLE IF NOT EXISTS export_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename TEXT NOT NULL,
+                    zip_path TEXT NOT NULL,
                     created_at DATETIME DEFAULT (datetime('now','localtime'))
                 );
             `;

@@ -42,7 +42,7 @@
 
                             <div class="col-md-6">
                                 <label class="form-label">导出格式</label>
-                                <input class="form-control" value="JSON（宋博士指定格式）" disabled />
+                                <input id="exportFormatDisplay" class="form-control" value="JSON（宋博士指定格式）" disabled />
                             </div>
 
                             <div class="col-md-6 d-flex align-items-end">
@@ -81,14 +81,47 @@
 
                 <div class="card mt-3">
                     <div class="card-header">
-                        <strong><i class="fas fa-question-circle me-1"></i>说明</strong>
+                        <strong><i class="fas fa-question-circle me-1"></i>说明：<span id="exportFormatLabel">JSON（宋博士指定格式）</span></strong>
                     </div>
                     <div class="card-body">
-                        <ul class="mb-0">
-                            <li>导出范围以任务完成时间为准（已标注）。</li>
-                            <li>导出为 JSON（LabelMe 兼容结构），一图一 JSON。</li>
-                            <li>若后端暂未实现，点击导出会提示接口不可用。</li>
-                        </ul>
+                        <ul id="exportNotes" class="mb-0"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 导出记录 -->
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <div class="col-12 col-lg-10 col-xl-8">
+                <div class="card">
+                    <div class="card-header">
+                        <strong><i class="fas fa-list me-1"></i>导出记录</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between mb-2">
+                            <div>
+                                <label class="form-label mb-0">每页显示</label>
+                                <select id="recordsPageSize" class="form-select d-inline-block" style="width: auto;">
+                                    <option value="5">5</option>
+                                    <option value="10" selected>10</option>
+                                    <option value="20">20</option>
+                                </select>
+                            </div>
+                            <div id="recordsInfo" class="text-muted small"></div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped">
+                                <thead><tr><th>ID</th><th>文件</th><th>导出时间</th><th>操作</th></tr></thead>
+                                <tbody id="exportRecordsBody"></tbody>
+                            </table>
+                        </div>
+
+                        <nav>
+                            <ul id="recordsPagination" class="pagination pagination-sm"></ul>
+                        </nav>
                     </div>
                 </div>
             </div>
@@ -179,6 +212,32 @@
             };
             document.getElementById('startTime').value = fmt(start);
             document.getElementById('endTime').value = fmt(end);
+        }
+
+        // 导出格式说明渲染
+        const exportNotesMap = {
+            drsong: [
+                '导出为单图单 JSON（宋博士指定格式）。',
+                '将图片统一转换为 JPG（质量保留），并以 UUID 命名。',
+                '每张图片会生成对应的 JSON，内部包含 base64 编码的 imageData。',
+                '所有文件打包为一个 ZIP，ZIP 文件名包含时间范围。'
+            ]
+        };
+
+        function renderExportNotes(format) {
+            const ul = document.getElementById('exportNotes');
+            ul.innerHTML = '';
+            // 固定说明条目
+            const liScope = document.createElement('li');
+            liScope.textContent = '导出范围以任务完成时间为准（已标注）。';
+            ul.appendChild(liScope);
+
+            const notes = exportNotesMap[format] || [];
+            notes.forEach(n => {
+                const li = document.createElement('li');
+                li.textContent = n;
+                ul.appendChild(li);
+            });
         }
 
         async function doExport() {
@@ -281,6 +340,63 @@
             }
         }
 
+        // 导出记录相关
+        async function loadExportRecords(page = 1) {
+            const pageSize = parseInt(document.getElementById('recordsPageSize').value) || 10;
+            try {
+                const resp = await fetch(`/api/admin/export/records?page=${page}&pageSize=${pageSize}`);
+                const j = await resp.json().catch(() => null);
+                if (!resp.ok || !j || !j.success) {
+                    console.warn('Failed to load export records', j);
+                    return;
+                }
+
+                const data = j.data || {};
+                const records = data.records || [];
+                const pagination = data.pagination || { page: 1, pageSize, total: 0, totalPages: 0 };
+
+                const tbody = document.getElementById('exportRecordsBody');
+                tbody.innerHTML = '';
+                records.forEach(r => {
+                    const tr = document.createElement('tr');
+                    const time = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
+                    tr.innerHTML = `<td>${r.id}</td><td><a href="${r.zip_path}" target="_blank">${r.filename}</a></td><td>${time}</td><td><a class="btn btn-sm btn-outline-primary" href="${r.zip_path}" target="_blank">下载</a></td>`;
+                    tbody.appendChild(tr);
+                });
+
+                document.getElementById('recordsInfo').textContent = `共 ${pagination.total} 条，${pagination.page}/${pagination.totalPages} 页`;
+
+                // render pagination
+                const ul = document.getElementById('recordsPagination');
+                ul.innerHTML = '';
+                const totalPages = pagination.totalPages || 0;
+                const current = pagination.page || 1;
+                // prev
+                const prevLi = document.createElement('li');
+                prevLi.className = `page-item ${current <= 1 ? 'disabled' : ''}`;
+                prevLi.innerHTML = `<a class="page-link" href="#">&laquo;</a>`;
+                prevLi.addEventListener('click', (e) => { e.preventDefault(); if (current>1) loadExportRecords(current-1); });
+                ul.appendChild(prevLi);
+
+                for (let p = 1; p <= totalPages; p++) {
+                    const li = document.createElement('li');
+                    li.className = `page-item ${p === current ? 'active' : ''}`;
+                    li.innerHTML = `<a class="page-link" href="#">${p}</a>`;
+                    li.addEventListener('click', (e) => { e.preventDefault(); loadExportRecords(p); });
+                    ul.appendChild(li);
+                }
+
+                const nextLi = document.createElement('li');
+                nextLi.className = `page-item ${current >= totalPages ? 'disabled' : ''}`;
+                nextLi.innerHTML = `<a class="page-link" href="#">&raquo;</a>`;
+                nextLi.addEventListener('click', (e) => { e.preventDefault(); if (current<totalPages) loadExportRecords(current+1); });
+                ul.appendChild(nextLi);
+
+            } catch (e) {
+                console.error('Error loading export records', e);
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('exportBtn').addEventListener('click', doExport);
             document.getElementById('previewBtn').addEventListener('click', doPreview);
@@ -290,6 +406,15 @@
 
             // 默认选近7天
             setQuickRange(7);
+            // 渲染默认（宋博士）导出格式说明
+            renderExportNotes('drsong');
+
+            // 导出记录分页控件绑定与初次加载
+            const pageSizeEl = document.getElementById('recordsPageSize');
+            if (pageSizeEl) {
+                pageSizeEl.addEventListener('change', () => loadExportRecords(1));
+            }
+            loadExportRecords(1);
         });
     </script>
 </body>
