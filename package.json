@@ -18,6 +18,8 @@
     "express-session": "^1.18.2",
     "image-size": "^2.0.2",
     "jimp": "^0.22.12",
+    "pngjs": "^6.0.0",
+    "jpeg-js": "^0.4.3",
     "multer": "^2.0.2",
     "sqlite3": "^5.1.6",
     "bcryptjs": "^2.4.3",

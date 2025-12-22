@@ -1,9 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const Jimp = require('jimp');
+const sizeOf = require('image-size');
+const { PNG } = require('pngjs');
+const jpeg = require('jpeg-js');
 const AdmZip = require('adm-zip');
-// 使用 Jimp 获取图片尺寸，避免直接调用 image-size 导致 Buffer 类型问题
+// 使用 `image-size` 获取图片尺寸，使用 `pngjs` 写出掩码，避免 Jimp.parseBitmap
 
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
@@ -29,10 +31,30 @@ function toArrayPoints(polygons) {
 
 async function processImageToTemp(srcFilePath, destStemPath) {
   const ext = path.extname(srcFilePath).toLowerCase();
-  const destImgPath = ext === '.png' ? destStemPath + '.jpg' : destStemPath + '.jpg';
-  // 统一导出为 jpg，若原为 jpg 则重编码；若为 png 则转换
-  const img = await Jimp.read(srcFilePath);
-  await img.quality(95).writeAsync(destImgPath);
+  const destImgPath = destStemPath + '.jpg';
+  // 如果是 PNG，用 pngjs + jpeg-js 转码为 JPG；如果已是 JPG 则直接拷贝
+  if (ext === '.png') {
+    const buf = fs.readFileSync(srcFilePath);
+    // 使用 pngjs 同步解码（避免调用 Jimp.parseBitmap）
+    const png = PNG.sync.read(buf);
+    const frameData = {
+      data: png.data,
+      width: png.width,
+      height: png.height
+    };
+    const jpegData = jpeg.encode(frameData, 95);
+    fs.writeFileSync(destImgPath, jpegData.data);
+    return destImgPath;
+  }
+
+  // 对于 jpg/jpeg 直接拷贝并保留为 .jpg
+  if (ext === '.jpg' || ext === '.jpeg') {
+    fs.copyFileSync(srcFilePath, destImgPath);
+    return destImgPath;
+  }
+
+  // 其它格式：尽量拷贝原文件并改为 .jpg 后缀（注意：可能不是实际 JPEG）
+  fs.copyFileSync(srcFilePath, destImgPath);
   return destImgPath;
 }
 
@@ -97,13 +119,26 @@ async function generateMaskFromLabelmeJson(jsonPath, outPngPath) {
     const base = i * 4;
     rgba[base] = v; rgba[base + 1] = v; rgba[base + 2] = v; rgba[base + 3] = 255;
   }
-  const img = await Jimp.read({ data: rgba, width: w, height: h });
-  await img.writeAsync(outPngPath);
+  // 使用 pngjs 写出 PNG 文件，避免 Jimp.parseBitmap
+  const png = new PNG({ width: w, height: h });
+  // png.data 是一个 Buffer，复制 rgba 以确保独立内存
+  rgba.copy(png.data, 0, 0, rgba.length);
+  await new Promise((resolve, reject) => {
+    const ws = fs.createWriteStream(outPngPath);
+    png.pack().pipe(ws).on('finish', resolve).on('error', reject);
+  });
 }
 
 async function buildOneLabelmeJson({ task, annotations, destImgPath, uuidName }) {
-  const jimg = await Jimp.read(destImgPath);
-  const dim = { width: jimg.bitmap.width, height: jimg.bitmap.height };
+  // 使用 image-size 获取图片宽高而不解码整张图片
+  let dim = { width: 0, height: 0 };
+  try {
+    const m = sizeOf(destImgPath);
+    dim.width = m.width || 0;
+    dim.height = m.height || 0;
+  } catch (e) {
+    // ignore, will fallback to task dimensions if available
+  }
   // 取最后一条或合并？按现有前端逻辑，使用最后一条记录中的 polygons
   let polygons = [];
   if (Array.isArray(annotations) && annotations.length > 0) {
@@ -125,7 +160,7 @@ async function buildOneLabelmeJson({ task, annotations, destImgPath, uuidName })
     shapes,
     lineColor: [0, 255, 0, 128],
     fillColor: [255, 0, 0, 128],
-    imagePath: `${uuidName}.jpg`,
+    imagePath: path.basename(destImgPath),
     imageData: fileToBase64(destImgPath),
     imageHeight: dim.height || task.height || null,
     imageWidth: dim.width || task.width || null
