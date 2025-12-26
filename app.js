@@ -1111,6 +1111,31 @@ app.post('/api/tasks/:id/release', isAnnotatorAuthenticated, async (req, res) =>
   }
 });
 
+// 标注员：废弃当前任务（删除该任务的 annotations，置为 pending，并取消导出与分配）
+app.post('/api/tasks/:id/discard', isAnnotatorAuthenticated, async (req, res) => {
+  try {
+    const taskId = parseInt(req.params.id);
+    if (!taskId) return res.status(400).json({ success: false, error: 'Invalid task id' });
+
+    // 删除与该任务关联的 annotations
+    await dbManager.deleteAnnotationsByTaskId(taskId);
+
+    // 将任务重置为 pending 状态（清除 completed_at）
+    await dbManager.resetTaskToPending(taskId);
+
+    // 将 exported 标记为 0（未导出）
+    await dbManager.markTaskUnexported(taskId);
+
+    // 释放该任务的分配（如果仍分配着的话）
+    await dbManager.releaseTaskAssignment(taskId).catch(()=>{});
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error discarding task:', err);
+    res.status(500).json({ success: false, error: err.message || 'Discard failed' });
+  }
+});
+
 // 公共：获取标签列表（用于前端标注时弹窗）
 app.get('/api/tags', async (req, res) => {
   try {
